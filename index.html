@@ -139,8 +139,31 @@ async function loadConnections(){
   const list=$("connectionsList");if(!list)return;list.innerHTML="<div class='card empty'>Loading connections…</div>";
   if(!token()){list.innerHTML="<div class='card empty'>Connect an exchange to begin. Server secrets are not entered here.</div>";return}
   try{const res=await api("/api/credentials");const d=await res.json();if(!d.ok){list.innerHTML="<div class='card empty'>Authentication required to view connections.</div>";return}
-  list.innerHTML=d.connections.length?d.connections.map(c=>{const ex=exchanges.find(x=>x[0]===c.exchange_id)||[c.exchange_id,c.exchange_id,"?"];return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='live'><i class='dot'></i> encrypted · "+c.mode+" · "+new Date(c.updated_at).toLocaleString()+"</span></div></div></div><button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Disconnect</button></div>"}).join(""):"<div class='card empty'>No exchange connections saved yet.</div>"
+  list.innerHTML=d.connections.length?d.connections.map(c=>{const ex=exchanges.find(x=>x[0]===c.exchange_id)||[c.exchange_id,c.exchange_id,"?"];return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='live'><i class='dot'></i> encrypted · "+c.mode+" · "+new Date(c.updated_at).toLocaleString()+"</span></div></div></div><button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Disconnect</button></div>"}).join(""):"<div class='card empty'>No exchange connections saved yet.</div>";
+  if(d.connections.length) loadAccount(d.connections[0].exchange_id);
   }catch(e){list.innerHTML="<div class='card empty'>Connection service unavailable.</div>"}
+}
+async function loadAccount(exchangeId){
+  try{
+    const res=await api("/api/account?exchange="+encodeURIComponent(exchangeId));
+    const d=await res.json();
+    if(!d.ok)return;
+    const quote=d.assets.find(a=>a.asset==="USDT")||d.assets.find(a=>a.asset==="USD")||d.assets[0];
+    if(quote){
+      const value=Number(quote.total||0);
+      $("equity").textContent="$"+fmt(value);
+      $("available").textContent="$"+fmt(Number(quote.free||0));
+      $("perfEquity").textContent="$"+fmt(value);
+    }
+    const positions=d.positions||[];
+    const posHtml=positions.length?positions.map(p=>"<div class='position-top'><div><span class='pair'>"+(p.symbol||"—")+"</span><span class='side'>"+(p.side||"POSITION").toUpperCase()+"</span></div><div class='"+(Number(p.unrealized||0)>=0?"positive":"negative")+"'>"+(Number(p.unrealized||0)>=0?"+":"")+fmt(Number(p.unrealized||0))+"</div></div><div class='position-grid'><div><label>Contracts</label><strong>"+fmt(Number(p.contracts||0),4)+"</strong></div><div><label>Entry</label><strong>"+(p.entry?"$"+fmt(p.entry):"—")+"</strong></div><div><label>Mark</label><strong>"+(p.mark?"$"+fmt(p.mark):"—")+"</strong></div><div><label>Leverage</label><strong>"+(p.leverage?p.leverage+"×":"—")+"</strong></div></div>").join("<div style='height:1px;background:var(--line);margin:18px 0'></div>"):"<div class='empty'>No open positions on the connected account.</div>";
+    document.querySelector("#overview .position").innerHTML=posHtml;
+    document.querySelector("#positions .card").innerHTML=positions.length?positions.map(p=>"<div class='position'><div class='position-top'><div><span class='pair'>"+(p.symbol||"—")+"</span><span class='side'>"+(p.side||"POSITION").toUpperCase()+"</span></div><strong class='"+(Number(p.unrealized||0)>=0?"positive":"negative")+"'>"+(Number(p.unrealized||0)>=0?"+":"")+fmt(Number(p.unrealized||0))+"</strong></div><div class='position-grid'><div><label>Contracts</label><strong>"+fmt(Number(p.contracts||0),4)+"</strong></div><div><label>Entry</label><strong>"+(p.entry?"$"+fmt(p.entry):"—")+"</strong></div><div><label>Mark</label><strong>"+(p.mark?"$"+fmt(p.mark):"—")+"</strong></div><div><label>Leverage</label><strong>"+(p.leverage?p.leverage+"×":"—")+"</strong></div></div></div>").join(""):"<div class='empty'>No open positions on the connected account.</div>";
+    const trades=d.trades||[];
+    const rows=trades.slice().reverse().map(t=>"<tr><td>"+(t.datetime?new Date(t.datetime).toLocaleString():"—")+"</td><td>"+(t.symbol||"—")+"</td><td class='"+(t.side==="buy"?"filled":"negative")+"'>"+(t.side||"—").toUpperCase()+"</td><td>"+(t.price?"$"+fmt(t.price):"—")+"</td><td>"+fmt(Number(t.amount||0),6)+"</td><td>"+(t.fee!=null?fmt(t.fee,6)+" "+(t.fee_currency||""):"—")+"</td><td>—</td><td><span class='badge'>FILLED</span></td></tr>").join("");
+    $("activityRows").innerHTML=rows||"<tr><td colspan='7' class='empty'>No exchange executions returned.</td></tr>";
+    $("engineState").textContent="CONNECTED";
+  }catch(e){}
 }
 async function disconnect(id){if(!confirm("Delete encrypted credentials for "+id+"?"))return;const res=await api("/api/credentials",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"delete",exchange_id:id})});const d=await res.json();toast(d.ok?"Connection removed":"Could not remove connection");loadConnections()}
 function ema(a,p){let k=2/(p+1),v=a[0];return a.map((x,i)=>i===0?v:(v=x*k+v*(1-k)))}
