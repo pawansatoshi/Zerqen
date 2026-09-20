@@ -121,7 +121,7 @@ const fmt=(n,d=2)=>Number(n).toLocaleString(undefined,{minimumFractionDigits:d,m
 function toast(t){const e=$("toast");e.textContent=t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2600)}
 function showView(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===id));window.scrollTo({top:0,behavior:"smooth"})}
 document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
-function openConnections(){showView("connections");closeModal();loadConnections()}
+function openConnections(){showView("connections");openModal();loadConnections()}
 function closeModal(){$("connectionModal").classList.remove("open")}
 function openModal(){$("connectionModal").classList.add("open")}
 function fillExchanges(){const s=$("exchange");if(!s)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)))}
