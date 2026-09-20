@@ -201,9 +201,25 @@ async function loadHealth(){
 }
 async function loadMarket(){
   const tf=currentTimeframe;
+  const binanceTf={"1h":"1h","4h":"4h","1d":"1d","1w":"1w"}[tf]||"1h";
   try{
-    const res=await fetch("/api/market?exchange=binance&symbol=BTC%2FUSDT&timeframe="+encodeURIComponent(tf)+"&limit=120",{cache:"no-store"});
-    const d=await res.json();if(!d.ok)throw Error(d.error||"market error");marketData=d;
+    let d=null;
+    try{
+      const rr=await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval="+binanceTf+"&limit=120",{cache:"no-store"});
+      if(rr.ok){
+        const rows=await rr.json();
+        if(Array.isArray(rows)&&rows.length){
+          const closes=rows.map(r=>Number(r[4])),opens=rows.map(r=>Number(r[1])),highs=rows.map(r=>Number(r[2])),lows=rows.map(r=>Number(r[3])),volumes=rows.map(r=>Number(r[5]));
+          d={ok:true,exchange:"binance",symbol:"BTC/USDT",timeframe:tf,times:rows.map(r=>Number(r[0])),opens,highs,lows,closes,volumes,ema9:ema(closes,9),ema21:ema(closes,21),rsi:rsi(closes),atr:(()=>{const a=Array(rows.length).fill(null),trs=rows.map((r,i)=>{const pc=i?closes[i-1]:closes[i];return Math.max(highs[i]-lows[i],Math.abs(highs[i]-pc),Math.abs(lows[i]-pc))});if(trs.length>14){let v=trs.slice(1,15).reduce((x,y)=>x+y,0)/14;a[14]=v;for(let i=15;i<trs.length;i++){v=(v*13+trs[i])/14;a[i]=v}}return a})()};
+        }
+      }
+    }catch(_){}
+    if(!d){
+      const res=await fetch("/api/market?exchange=binance&symbol=BTC%2FUSDT&timeframe="+encodeURIComponent(tf)+"&limit=120",{cache:"no-store"});
+      d=await res.json();
+    }
+    if(!d.ok)throw Error(d.error||"market error");
+    marketData=d;
     const last=d.closes[d.closes.length-1],prev=d.closes[d.closes.length-2],chg=(last/prev-1)*100;
     $("chartPrice").textContent="$"+fmt(last);$("quote").textContent="$"+fmt(last);$("quoteChange").textContent=(chg>=0?"+":"")+fmt(chg)+"%";$("quoteChange").className="price "+(chg>=0?"positive":"negative");
     $("marketPrice").textContent="$"+fmt(last);$("marketQuote").textContent=(chg>=0?"+":"")+fmt(chg)+"%";
