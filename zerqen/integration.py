@@ -15,6 +15,7 @@ def authorize_pipeline(
     mode: TradingMode,
     order: Order,
     equity: float,
+    reference_price: float,
     current_drawdown: float,
     daily_loss: float,
     *,
@@ -36,7 +37,9 @@ def authorize_pipeline(
     )
     if not portfolio.allowed:
         return OrderAuthorization(False, portfolio.reason)
-    notional = equity if order.order_type == "market" else 0.0
+    if reference_price <= 0:
+        return OrderAuthorization(False, "reference price must be positive")
+    notional = reference_price * order.quantity
     if mode == TradingMode.LIVE:
         decision = authorize_order(
             mode, equity, notional, daily_loss, current_drawdown,
