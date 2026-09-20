@@ -207,28 +207,63 @@ def market(
     if exchange not in EXCHANGES:
         raise HTTPException(400, "unsupported exchange")
     try:
-        ex = make_exchange(exchange)
-        ex.load_markets()
-        if symbol not in ex.symbols:
-            raise HTTPException(400, "symbol is not available on this exchange")
-        rows = ex.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        rows = None
+        ticker = None
+        if exchange == "binance":
+            import urllib.parse
+            import urllib.request
+
+            interval = timeframe if timeframe in {"1m","3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w"} else "1h"
+            params = urllib.parse.urlencode({
+                "symbol": symbol.replace("/", "").upper(),
+                "interval": interval,
+                "limit": limit,
+            })
+            with urllib.request.urlopen(
+                "https://api.binance.com/api/v3/klines?" + params,
+                timeout=7,
+            ) as response:
+                rows = json.loads(response.read().decode())
+            try:
+                with urllib.request.urlopen(
+                    "https://api.binance.com/api/v3/ticker/24hr?" + urllib.parse.urlencode({"symbol": symbol.replace("/", "").upper()}),
+                    timeout=5,
+                ) as response:
+                    t = json.loads(response.read().decode())
+                    ticker = {
+                        "last": float(t.get("lastPrice", 0)),
+                        "bid": float(t.get("bidPrice", 0)),
+                        "ask": float(t.get("askPrice", 0)),
+                        "change": float(t.get("priceChangePercent", 0)),
+                        "quote_volume": float(t.get("quoteVolume", 0)),
+                        "timestamp": int(t.get("closeTime", 0)),
+                    }
+            except Exception:
+                ticker = None
+
+        if not rows:
+            ex = make_exchange(exchange)
+            ex.load_markets()
+            if symbol not in ex.symbols:
+                raise HTTPException(400, "symbol is not available on this exchange")
+            rows = ex.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+            if ex.has.get("fetchTicker"):
+                try:
+                    t = ex.fetch_ticker(symbol)
+                    ticker = {
+                        "last": t.get("last"),
+                        "bid": t.get("bid"),
+                        "ask": t.get("ask"),
+                        "change": t.get("percentage"),
+                        "quote_volume": t.get("quoteVolume"),
+                        "timestamp": t.get("timestamp"),
+                    }
+                except Exception:
+                    ticker = None
+
         if not rows:
             raise HTTPException(502, "no market data returned")
         result = compute_indicators(rows)
-        ticker = None
-        if ex.has.get("fetchTicker"):
-            try:
-                t = ex.fetch_ticker(symbol)
-                ticker = {
-                    "last": t.get("last"),
-                    "bid": t.get("bid"),
-                    "ask": t.get("ask"),
-                    "change": t.get("percentage"),
-                    "quote_volume": t.get("quoteVolume"),
-                    "timestamp": t.get("timestamp"),
-                }
-            except Exception:
-                ticker = None
         return {"ok": True, "exchange": exchange, "symbol": symbol, "timeframe": timeframe, **result, "ticker": ticker}
     except HTTPException:
         raise
