@@ -15,7 +15,9 @@ dependencies = [
   "pandas>=2.1",
   "pydantic>=2.5",
   "typer>=0.12",
-  "ccxt>=4.4"
+  "ccxt>=4.4",
+  "cryptography>=43",
+  "psycopg[binary]>=3.2"
 ]
 
 [project.optional-dependencies]
