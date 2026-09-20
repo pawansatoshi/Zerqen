@@ -22,18 +22,43 @@ button{cursor:pointer;font-weight:700}.danger{color:#ffb4b4}.ok{color:#9ff0ba}.m
 <label>API secret</label><input id="secret" type="password" autocomplete="off">
 <label>Passphrase (OKX / Bitget / KuCoin when required)</label><input id="pass" type="password" autocomplete="off">
 <button onclick="testConnection()">Test connection</button>
+<button onclick="saveConnection()">Save encrypted credential</button>
+<button onclick="loadConnections()">Refresh saved connections</button>
 <pre id="result" class="muted"></pre>
+<div id="saved" class="grid"></div>
 </div>
 <div class="card"><h2>Supported</h2><div id="list" class="grid"></div></div>
 <script>
 const exchanges=[["delta_india","Delta Exchange India"],["coindcx","CoinDCX"],["binance","Binance"],["okx","OKX"],["bybit","Bybit"],["bitget","Bitget"],["mexc","MEXC"],["kucoin","KuCoin"],["gate","Gate.io"],["wazirx","WazirX"]];
 const s=document.getElementById("exchange"); const l=document.getElementById("list");
 exchanges.forEach(([id,name])=>{s.add(new Option(name,id));const d=document.createElement("div");d.className="badge";d.textContent=name+" · API ready";l.appendChild(d)});
+async function api(path, options={}){ return fetch(path, options); }
 async function testConnection(){
  const result=document.getElementById("result"); result.textContent="testing…";
  try{
   const r=await fetch("/api/exchange_test.py",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":document.getElementById("token").value},body:JSON.stringify({exchange_id:s.value,mode:document.getElementById("mode").value,api_key:document.getElementById("key").value,api_secret:document.getElementById("secret").value,passphrase:document.getElementById("pass").value})});
   const data=await r.json(); result.className=data.ok?"ok":"danger"; result.textContent=JSON.stringify(data,null,2);
  }catch(e){result.className="danger";result.textContent=String(e)}
+}
+async function saveConnection(){
+ const result=document.getElementById("result"); result.textContent="saving encrypted credential…";
+ try{
+  const r=await api("/api/credentials.py",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":document.getElementById("token").value},body:JSON.stringify({action:"save",exchange_id:s.value,mode:document.getElementById("mode").value,api_key:document.getElementById("key").value,api_secret:document.getElementById("secret").value,passphrase:document.getElementById("pass").value})});
+  const data=await r.json(); result.className=data.ok?"ok":"danger"; result.textContent=JSON.stringify(data,null,2); if(data.ok) loadConnections();
+ }catch(e){result.className="danger";result.textContent=String(e)}
+}
+async function loadConnections(){
+ const saved=document.getElementById("saved"); saved.textContent="loading…";
+ try{
+  const r=await api("/api/credentials.py",{headers:{"x-zerqen-dashboard-token":document.getElementById("token").value}});
+  const data=await r.json(); if(!data.ok){saved.textContent=JSON.stringify(data);return}
+  saved.innerHTML="";
+  data.connections.forEach(c=>{const d=document.createElement("div");d.className="badge";d.innerHTML="<strong>"+c.exchange_id+"</strong><br>"+c.mode+" · "+new Date(c.updated_at).toLocaleString()+"<br><button onclick="disconnect('"+c.exchange_id+"')">Disconnect</button>";saved.appendChild(d)})
+ }catch(e){saved.textContent=String(e)}
+}
+async function disconnect(id){
+ if(!confirm("Delete encrypted credentials for "+id+"?")) return;
+ const r=await api("/api/credentials.py",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":document.getElementById("token").value},body:JSON.stringify({action:"delete",exchange_id:id})});
+ const data=await r.json(); document.getElementById("result").textContent=JSON.stringify(data,null,2); loadConnections();
 }
 </script></body></html>
