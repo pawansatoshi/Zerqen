@@ -30,7 +30,7 @@ def test_pipeline_blocks_kill_switch():
     switch.trip("operator stop")
     order = Order("z2", "BTC/USDT", OrderSide.BUY, 1.0)
     result = authorize_pipeline(
-        TradingMode.PAPER, order, 10000, 0.02, 0.01,
+        TradingMode.PAPER, order, 10000, 100.0, 0.02, 0.01,
         open_risk_amounts=[25], max_total_risk=0.015,
         live_limits=LiveLimits(10000, 1000, 0.03, 0.20),
         kill_switch=switch,
@@ -40,7 +40,7 @@ def test_pipeline_blocks_kill_switch():
 def test_pipeline_rejects_bad_quantity():
     order = Order("z3", "BTC/USDT", OrderSide.BUY, 0)
     result = authorize_pipeline(
-        TradingMode.PAPER, order, 10000, 0.0, 0.0,
+        TradingMode.PAPER, order, 10000, 100.0, 0.0, 0.0,
         open_risk_amounts=[], max_total_risk=0.015,
         live_limits=LiveLimits(10000, 1000, 0.03, 0.20),
         kill_switch=KillSwitch(),
