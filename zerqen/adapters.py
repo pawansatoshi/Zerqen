@@ -35,3 +35,25 @@ class PaperExchangeAdapter:
     def cancel(self, client_order_id: str) -> bool:
         result = self._orders.get(client_order_id)
         return result is not None and result.status not in {OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.REJECTED}
+
+@dataclass(frozen=True)
+class RestExchangeConfig:
+    exchange_id: str
+    base_url: str
+    testnet_url: str | None = None
+
+class RestExchangeAdapter:
+    """Transport-neutral live adapter boundary.
+
+    Concrete exchanges must implement signing and endpoint payload mapping.
+    No secrets are accepted in constructor arguments or persisted by this class.
+    """
+
+    def __init__(self, config: RestExchangeConfig):
+        self.config = config
+
+    def submit(self, order: Order, reference_price: float) -> AdapterResult:
+        raise NotImplementedError(f"native adapter required for {self.config.exchange_id}")
+
+    def cancel(self, client_order_id: str) -> bool:
+        raise NotImplementedError(f"native adapter required for {self.config.exchange_id}")
