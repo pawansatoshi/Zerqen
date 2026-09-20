@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zerqen"
+version = "0.1.0"
+description = "Adaptive quantitative trading and compounding research engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Pawan Satoshi"}]
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "pydantic>=2.5",
+  "typer>=0.12"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.6"
+]
+
+[project.scripts]
+zerqen = "zerqen.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["zerqen*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
