@@ -1,17 +1,18 @@
 from http.server import BaseHTTPRequestHandler
-import json
+from pathlib import Path
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        payload = {
-            "ok": True,
-            "service": "zerqen-api",
-            "message": "Zerqen API is online",
-        }
-        body = json.dumps(payload).encode("utf-8")
+        # Vercel's Python preset is currently using this conventional entrypoint
+        # for the project root. Serve the dashboard HTML from the repository root.
+        html_path = Path(__file__).resolve().parent.parent / "index.html"
+        try:
+            body = html_path.read_bytes()
+        except OSError:
+            body = b"<!doctype html><title>Zerqen</title><h1>Zerqen dashboard unavailable</h1>"
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -19,7 +20,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
 
