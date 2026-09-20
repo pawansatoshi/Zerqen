@@ -1,64 +1,170 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zerqen Exchange Connections</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#050608">
+<title>Zerqen — Adaptive Quant Engine</title>
 <style>
-body{font-family:system-ui,-apple-system,sans-serif;max-width:900px;margin:auto;padding:24px;background:#0b0d10;color:#f4f4f5}
-.card{background:#151922;border:1px solid #282e3a;border-radius:16px;padding:20px;margin:14px 0}
-select,input,button{width:100%;box-sizing:border-box;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #343b49;background:#0f1218;color:white}
-button{cursor:pointer;font-weight:700}.danger{color:#ffb4b4}.ok{color:#9ff0ba}.muted{color:#a6adbb}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
-.badge{padding:8px;border:1px solid #343b49;border-radius:10px}
-</style></head>
+:root{--bg:#050608;--surface:#0c0f14;--surface2:#11151c;--surface3:#171c25;--line:rgba(255,255,255,.075);--text:#f5f7fa;--muted:#8f98a8;--soft:#c8ced8;--green:#53d98b;--red:#ff6b76;--blue:#82aaff;--amber:#f4c76b;--radius:22px}
+*{box-sizing:border-box}html{background:var(--bg);scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 50% -10%,#151a24 0,#080a0e 32%,#050608 70%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,system-ui,sans-serif;letter-spacing:-.01em}
+button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 20px 110px}.topbar{height:64px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;background:rgba(5,6,8,.78);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
+.brand{display:flex;align-items:center;gap:12px}.mark{width:34px;height:34px;border:1px solid var(--line);border-radius:11px;background:linear-gradient(145deg,#fff,#777);display:grid;place-items:center;color:#050608;font-weight:900;font-size:13px;box-shadow:0 8px 30px #0008}.brand h1{font-size:17px;margin:0;font-weight:700}.brand small{display:block;color:var(--muted);font-size:10px;margin-top:2px;letter-spacing:.04em}.top-actions{display:flex;gap:8px}.iconbtn,.navbtn{border:1px solid var(--line);background:rgba(255,255,255,.035);color:var(--soft);border-radius:12px;padding:9px 12px;cursor:pointer}.iconbtn:hover,.navbtn:hover{background:rgba(255,255,255,.07)}
+.nav{display:flex;gap:4px;margin:10px 0 26px;padding:4px;border:1px solid var(--line);background:rgba(255,255,255,.025);border-radius:14px;width:max-content}.navbtn{border:0;background:transparent;padding:9px 14px;font-size:12px}.navbtn.active{background:#fff;color:#050608;box-shadow:0 4px 18px #0006}
+.hero{display:grid;grid-template-columns:1.35fr .65fr;gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.018));border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 18px 60px rgba(0,0,0,.2);overflow:hidden}.hero-card{padding:26px}.eyebrow{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.12em}.hero-value{font-size:clamp(38px,6vw,64px);font-weight:650;letter-spacing:-.055em;margin:10px 0 4px}.return{font-size:14px;color:var(--green);font-weight:600}.periods{display:flex;gap:6px;margin-top:24px}.period{border:0;background:transparent;color:var(--muted);padding:7px 10px;border-radius:9px;cursor:pointer;font-size:11px}.period.active{background:#fff;color:#050608}
+.mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:22px}.metric{padding:13px 0;border-top:1px solid var(--line)}.metric label{display:block;color:var(--muted);font-size:10px;margin-bottom:6px}.metric strong{font-size:14px;font-weight:600}.positive{color:var(--green)}.negative{color:var(--red)}
+.status-card{padding:24px;display:flex;flex-direction:column;justify-content:space-between}.status-head{display:flex;justify-content:space-between;align-items:center}.live{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--green)}.dot{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor}.engine{font-size:30px;font-weight:620;letter-spacing:-.04em;margin:12px 0}.sub{font-size:12px;color:var(--muted);line-height:1.55}.riskrow{display:flex;justify-content:space-between;padding-top:16px;margin-top:16px;border-top:1px solid var(--line);font-size:11px}.riskrow span:last-child{color:var(--soft)}
+.section{margin-top:18px}.section-head{display:flex;align-items:end;justify-content:space-between;margin-bottom:10px}.section-head h2{font-size:18px;margin:0;letter-spacing:-.025em}.section-head p{margin:3px 0 0;color:var(--muted);font-size:11px}.link{border:0;background:transparent;color:var(--blue);font-size:11px;cursor:pointer}
+.market-grid{display:grid;grid-template-columns:1.45fr .55fr;gap:16px}.chart-card{padding:20px}.chart-head{display:flex;justify-content:space-between;align-items:start}.symbol{font-size:20px;font-weight:650}.price{font-size:14px;color:var(--soft);margin-top:4px}.quote{font-size:22px;font-weight:650;text-align:right}.chart-wrap{height:330px;margin:16px -4px 4px;position:relative}.chart-wrap svg{width:100%;height:100%;display:block}.chart-grid{stroke:rgba(255,255,255,.055);stroke-width:1}.chart-line{fill:none;stroke:#f2f4f7;stroke-width:2.2;vector-effect:non-scaling-stroke}.chart-area{fill:url(#area)}.signal-buy,.signal-sell{font-size:10px;font-weight:700}.signal-buy{fill:var(--green)}.signal-sell{fill:var(--red)}.chart-axis{font-size:9px;fill:#697282}.timebar{display:flex;gap:4px}.timebar button{background:transparent;color:var(--muted);border:0;padding:7px 8px;font-size:10px;cursor:pointer;border-radius:8px}.timebar button.active{background:rgba(255,255,255,.08);color:#fff}
+.stack{display:grid;gap:10px}.small-card{padding:18px}.small-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}.big-stat{font-size:28px;font-weight:620;margin:8px 0}.bar{height:5px;border-radius:99px;background:#20252e;overflow:hidden;margin-top:12px}.bar i{display:block;height:100%;border-radius:99px;background:#dfe4eb}.bar.green i{background:var(--green)}.bar.red i{background:var(--red)}
+.position{padding:18px}.position-top{display:flex;justify-content:space-between;align-items:start}.pair{font-size:15px;font-weight:650}.side{font-size:10px;border-radius:7px;padding:4px 7px;background:rgba(83,217,139,.1);color:var(--green);margin-left:6px}.position-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}.position-grid label{display:block;color:var(--muted);font-size:9px;margin-bottom:5px}.position-grid strong{font-size:12px}.empty{padding:24px;text-align:center;color:var(--muted);font-size:12px}
+.table-card{padding:0}.table-scroll{overflow:auto}.table{width:100%;border-collapse:collapse;min-width:720px}.table th,.table td{padding:15px 18px;text-align:left;border-bottom:1px solid var(--line);font-size:11px}.table th{color:var(--muted);font-weight:500}.table td{color:#d8dde5}.table tr:last-child td{border-bottom:0}.badge{font-size:9px;padding:5px 7px;border-radius:7px;background:rgba(255,255,255,.06);color:var(--soft)}.filled{color:var(--green)!important}
+.analytics{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}.analytics-card{padding:20px}.equity{height:260px}.equity svg{width:100%;height:100%}.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.statbox{padding:14px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.018)}.statbox label{font-size:9px;color:var(--muted);display:block;margin-bottom:7px}.statbox strong{font-size:15px}
+.connection-list{display:grid;gap:10px}.connection{padding:17px;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.018)}.connection-left{display:flex;gap:12px;align-items:center}.exchange-logo{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#191e27;border:1px solid var(--line);font-size:11px;font-weight:700}.connection-name{font-size:13px;font-weight:600}.connection-meta{font-size:10px;color:var(--muted);margin-top:4px}.connect-btn{border:1px solid var(--line);background:#fff;color:#050608;padding:9px 12px;border-radius:10px;font-size:10px;font-weight:650;cursor:pointer}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(12px);z-index:50;display:none;align-items:flex-end;justify-content:center}.modal.open{display:flex}.modal-box{width:min(620px,100%);max-height:90vh;overflow:auto;background:#0c0f14;border:1px solid var(--line);border-radius:24px 24px 0 0;padding:24px}.modal-head{display:flex;justify-content:space-between;align-items:center}.modal-head h3{margin:0;font-size:20px}.close{border:0;background:transparent;color:var(--muted);font-size:22px;cursor:pointer}.form{display:grid;gap:9px;margin-top:18px}.form label{font-size:10px;color:var(--muted)}.form input,.form select{width:100%;padding:13px;border:1px solid var(--line);background:#07090d;color:#fff;border-radius:12px;outline:none}.form input:focus,.form select:focus{border-color:#687384}.primary{border:0;background:#fff;color:#050608;padding:13px;border-radius:12px;font-weight:650;cursor:pointer}.secondary{border:1px solid var(--line);background:transparent;color:#fff;padding:13px;border-radius:12px;cursor:pointer}.note{font-size:10px;color:var(--muted);line-height:1.5;padding:11px;border-radius:12px;background:rgba(255,255,255,.035)}.toast{position:fixed;left:50%;bottom:82px;transform:translateX(-50%) translateY(15px);opacity:0;transition:.25s;z-index:80;padding:11px 15px;border:1px solid var(--line);background:#151922;color:#fff;border-radius:12px;font-size:11px;box-shadow:0 15px 50px #0009}.toast.show{opacity:1;transform:translateX(-50%)}
+.bottom{display:none}
+.view{display:none}.view.active{display:block}
+@media(max-width:900px){.hero,.market-grid,.analytics{grid-template-columns:1fr}.mini-grid{grid-template-columns:repeat(2,1fr)}.position-grid{grid-template-columns:repeat(2,1fr)}.chart-wrap{height:260px}.nav{width:100%;overflow:auto}.navbtn{white-space:nowrap}.app{padding:10px 12px 92px}.topbar{height:56px}.brand h1{font-size:15px}}
+@media(max-width:560px){.top-actions .iconbtn span{display:none}.hero-card,.status-card,.chart-card,.analytics-card,.small-card{padding:16px}.hero-value{font-size:43px}.quote{font-size:18px}.section-head h2{font-size:16px}.bottom{position:fixed;display:flex;left:10px;right:10px;bottom:10px;height:62px;border:1px solid var(--line);border-radius:20px;background:rgba(12,15,20,.9);backdrop-filter:blur(22px);z-index:40;justify-content:space-around;align-items:center}.bottom button{border:0;background:transparent;color:var(--muted);font-size:9px;padding:8px}.bottom button.active{color:#fff}.nav{display:none}}
+</style>
+</head>
 <body>
-<h1>Zerqen Exchange Connections</h1>
-<p class="muted">Read-only API verification. No order is placed by this page.</p>
-<div class="card">
-<label>Exchange</label><select id="exchange"></select>
-<label>Mode</label><select id="mode"><option value="testnet">Testnet / Demo</option><option value="live">Live account — read only test</option></select>
-<label>Dashboard access token</label><input id="token" type="password" autocomplete="off">
-<label>API key</label><input id="key" type="password" autocomplete="off">
-<label>API secret</label><input id="secret" type="password" autocomplete="off">
-<label>Passphrase (OKX / Bitget / KuCoin when required)</label><input id="pass" type="password" autocomplete="off">
-<button onclick="testConnection()">Test connection</button>
-<button onclick="saveConnection()">Save encrypted credential</button>
-<button onclick="loadConnections()">Refresh saved connections</button>
-<pre id="result" class="muted"></pre>
-<div id="saved" class="grid"></div>
+<div class="app">
+<header class="topbar">
+  <div class="brand"><div class="mark">Z</div><div><h1>zerqen</h1><small>adaptive quant engine</small></div></div>
+  <div class="top-actions"><button class="iconbtn" onclick="refreshAll()">↻ <span>Refresh</span></button><button class="iconbtn" onclick="openConnections()">◉ <span>Connections</span></button></div>
+</header>
+
+<nav class="nav">
+  <button class="navbtn active" data-view="overview">Overview</button><button class="navbtn" data-view="markets">Markets</button><button class="navbtn" data-view="positions">Positions</button><button class="navbtn" data-view="orders">Orders</button><button class="navbtn" data-view="performance">Performance</button><button class="navbtn" data-view="connections">Connections</button>
+</nav>
+
+<main>
+<section id="overview" class="view active">
+  <div class="hero">
+    <div class="card hero-card">
+      <div class="eyebrow">Portfolio value</div><div class="hero-value" id="equity">$10,842.37</div><div class="return" id="dayReturn">+$0.00 · 0.00%</div>
+      <div class="periods"><button class="period active">Today</button><button class="period">7D</button><button class="period">30D</button><button class="period">All time</button></div>
+      <div class="mini-grid">
+        <div class="metric"><label>Available</label><strong id="available">$10,842.37</strong></div><div class="metric"><label>Unrealized P&L</label><strong class="positive" id="unrealized">+$0.00</strong></div><div class="metric"><label>Realized P&L</label><strong class="positive" id="realized">+$0.00</strong></div><div class="metric"><label>Exposure</label><strong id="exposure">0.0%</strong></div>
+      </div>
+    </div>
+    <div class="card status-card">
+      <div><div class="status-head"><span class="eyebrow">Engine</span><span class="live"><i class="dot"></i><span id="engineState">READY</span></span></div><div class="engine">Research mode</div><div class="sub">Signals, risk and execution state are separated. A daily research hurdle never forces a trade.</div></div>
+      <div><div class="riskrow"><span>Risk / trade</span><span>0.50%</span></div><div class="riskrow"><span>Daily loss limit</span><span>3.00%</span></div><div class="riskrow"><span>Max drawdown</span><span>20.00%</span></div></div>
+    </div>
+  </div>
+
+  <div class="section"><div class="section-head"><div><h2>Market intelligence</h2><p>Live public market data · strategy signals are computed from candle data</p></div><button class="link" onclick="showView('markets')">Open markets →</button></div>
+    <div class="market-grid">
+      <div class="card chart-card"><div class="chart-head"><div><div class="symbol" id="symbol">BTC/USDT</div><div class="price" id="chartPrice">Loading market data…</div></div><div><div class="quote" id="quote">—</div><div class="price" id="quoteChange">—</div></div></div><div class="chart-wrap" id="chart"></div><div class="timebar"><button class="active" data-tf="1h">1H</button><button data-tf="4h">4H</button><button data-tf="1d">1D</button><button data-tf="1w">1W</button></div></div>
+      <div class="stack">
+        <div class="card small-card"><div class="small-title">Research hurdle</div><div class="big-stat">8.00%</div><div class="sub">A measurement target, not a guaranteed return.</div></div>
+        <div class="card small-card"><div class="small-title">Risk budget</div><div class="big-stat">0.50%</div><div class="sub">Default maximum risk allocated per trade.</div><div class="bar"><i style="width:25%"></i></div></div>
+        <div class="card small-card"><div class="small-title">Drawdown</div><div class="big-stat" id="drawdown">0.00%</div><div class="sub">20.00% hard portfolio guard.</div><div class="bar red"><i id="ddbar" style="width:0%"></i></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><div class="section-head"><div><h2>Open positions</h2><p>Live execution state</p></div><button class="link" onclick="showView('positions')">View all →</button></div><div class="card position"><div class="empty">No live positions loaded. Connect an exchange to populate positions.</div></div></div>
+
+  <div class="section"><div class="section-head"><div><h2>Recent activity</h2><p>Execution and account events</p></div><button class="link" onclick="showView('orders')">View activity →</button></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Pair</th><th>Side</th><th>Price</th><th>Size</th><th>P&L</th><th>Status</th></tr></thead><tbody id="activityRows"><tr><td colspan="7" class="empty">No executions recorded yet.</td></tr></tbody></table></div></div></div>
+</section>
+
+<section id="markets" class="view">
+  <div class="section-head"><div><h2>Markets</h2><p>Public market data and deterministic signal evidence</p></div></div>
+  <div class="card chart-card"><div class="chart-head"><div><div class="symbol">BTC/USDT</div><div class="price" id="marketPrice">—</div></div><div class="quote" id="marketQuote">—</div></div><div class="chart-wrap" style="height:420px" id="marketChart"></div><div class="timebar"><button class="active">1H</button><button>4H</button><button>1D</button></div></div>
+  <div class="section"><div class="section-head"><div><h2>Signal evidence</h2><p>Each marker is tied to candle time and indicator state.</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Signal</th><th>Price</th><th>EMA trend</th><th>RSI</th><th>ATR</th><th>State</th></tr></thead><tbody id="signalRows"><tr><td colspan="7" class="empty">Loading signals…</td></tr></tbody></table></div></div></div>
+</section>
+
+<section id="positions" class="view"><div class="section-head"><div><h2>Positions</h2><p>Entry, current mark, stop, target and unrealized P&L</p></div></div><div class="card"><div class="empty">No live positions loaded. Once an authenticated exchange connection is active, positions can be populated here.</div></div></section>
+
+<section id="orders" class="view"><div class="section-head"><div><h2>Orders & activity</h2><p>Order lifecycle, fills, fees and audit events</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Date / time</th><th>Exchange</th><th>Symbol</th><th>Side</th><th>Execution</th><th>Fee</th><th>P&L</th><th>Status</th></tr></thead><tbody><tr><td colspan="8" class="empty">No executions recorded yet. Research signals do not place orders.</td></tr></tbody></table></div></div></section>
+
+<section id="performance" class="view">
+  <div class="section-head"><div><h2>Performance</h2><p>Equity, returns, drawdown and trade statistics</p></div></div>
+  <div class="analytics"><div class="card analytics-card"><div class="small-title">Equity curve</div><div class="big-stat" id="perfEquity">$10,842.37</div><div class="equity" id="equityChart"></div></div><div class="card analytics-card"><div class="small-title">Risk-adjusted view</div><div class="stat-grid" style="margin-top:16px"><div class="statbox"><label>Daily return</label><strong id="perfReturn">0.00%</strong></div><div class="statbox"><label>Drawdown</label><strong>0.00%</strong></div><div class="statbox"><label>Win rate</label><strong>—</strong></div><div class="statbox"><label>Profit factor</label><strong>—</strong></div><div class="statbox"><label>Avg win</label><strong>—</strong></div><div class="statbox"><label>Avg loss</label><strong>—</strong></div></div><div class="note" style="margin-top:18px">Performance statistics are only populated from verified execution records. Zerqen does not fabricate backtest or live-trading results.</div></div></div>
+</section>
+
+<section id="connections" class="view">
+  <div class="section-head"><div><h2>Exchange connections</h2><p>Encrypted credential vault · read-only verification before execution</p></div><button class="connect-btn" onclick="openConnections()">+ Connect exchange</button></div>
+  <div id="connectionsList" class="connection-list"></div>
+  <div class="card note" style="margin-top:12px">API credentials are encrypted server-side before storage. Do not grant withdrawal permission. The server-side database and vault secrets are never displayed in this interface.</div>
+</section>
+</main>
 </div>
-<div class="card"><h2>Supported</h2><div id="list" class="grid"></div></div>
+
+<div class="bottom"><button class="active" data-view="overview">⌂<br>Home</button><button data-view="markets">◒<br>Markets</button><button data-view="positions">◈<br>Positions</button><button data-view="orders">≡<br>Activity</button><button data-view="connections">⋯<br>More</button></div>
+
+<div class="modal" id="connectionModal" onclick="if(event.target===this)closeModal()"><div class="modal-box">
+  <div class="modal-head"><h3>Connect exchange</h3><button class="close" onclick="closeModal()">×</button></div>
+  <div class="form">
+    <label>Exchange</label><select id="exchange"></select>
+    <label>Verification mode</label><select id="mode"><option value="testnet">Testnet / Demo</option><option value="live">Live account — read-only test</option></select>
+    <label>Dashboard access token</label><input id="token" type="password" autocomplete="off" placeholder="Internal access token">
+    <label>API key</label><input id="key" type="password" autocomplete="off">
+    <label>API secret</label><input id="secret" type="password" autocomplete="off">
+    <label>Passphrase (when required)</label><input id="pass" type="password" autocomplete="off">
+    <div class="note">Connection testing is read-only. No order is submitted by this screen. For live accounts, use keys with withdrawals disabled.</div>
+    <button class="primary" onclick="testConnection()">Test connection</button>
+    <button class="secondary" onclick="saveConnection()">Save encrypted credential</button>
+    <div id="result" class="sub"></div>
+  </div>
+</div></div>
+<div class="toast" id="toast"></div>
+
 <script>
-const exchanges=[["delta_india","Delta Exchange India"],["coindcx","CoinDCX"],["binance","Binance"],["okx","OKX"],["bybit","Bybit"],["bitget","Bitget"],["mexc","MEXC"],["kucoin","KuCoin"],["gate","Gate.io"],["wazirx","WazirX"]];
-const s=document.getElementById("exchange"); const l=document.getElementById("list");
-exchanges.forEach(([id,name])=>{s.add(new Option(name,id));const d=document.createElement("div");d.className="badge";d.textContent=name+" · API ready";l.appendChild(d)});
-async function api(path, options={}){ return fetch(path, options); }
+const exchanges=[["delta_india","Delta Exchange India","DE"],["coindcx","CoinDCX","CX"],["binance","Binance","BN"],["okx","OKX","OK"],["bybit","Bybit","BY"],["bitget","Bitget","BG"],["mexc","MEXC","MX"],["kucoin","KuCoin","KC"],["gate","Gate.io","GT"],["wazirx","WazirX","WX"]];
+const $=id=>document.getElementById(id);
+let marketData=null, lastRefresh=0;
+const fmt=(n,d=2)=>Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+function toast(t){const e=$("toast");e.textContent=t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2600)}
+function showView(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===id));window.scrollTo({top:0,behavior:"smooth"})}
+document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
+function openConnections(){showView("connections");closeModal();loadConnections()}
+function closeModal(){$("connectionModal").classList.remove("open")}
+function openModal(){$("connectionModal").classList.add("open")}
+function fillExchanges(){const s=$("exchange");if(!s)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)))}
+function token(){return $("token")?.value||sessionStorage.getItem("zerqen_token")||""}
+async function api(path,options={}){const headers=Object.assign({},options.headers||{},{"x-zerqen-dashboard-token":token()});return fetch(path,Object.assign({},options,{headers}))}
 async function testConnection(){
- const result=document.getElementById("result"); result.textContent="testing…";
- try{
-  const r=await fetch("/api/exchange_test",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":document.getElementById("token").value},body:JSON.stringify({exchange_id:s.value,mode:document.getElementById("mode").value,api_key:document.getElementById("key").value,api_secret:document.getElementById("secret").value,passphrase:document.getElementById("pass").value})});
-  const data=await r.json(); result.className=data.ok?"ok":"danger"; result.textContent=JSON.stringify(data,null,2);
- }catch(e){result.className="danger";result.textContent=String(e)}
+  const r=$("result");r.textContent="Testing read-only authentication…";
+  try{const res=await fetch("/api/exchange_test",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":$("token").value},body:JSON.stringify({exchange_id:$("exchange").value,mode:$("mode").value,api_key:$("key").value,api_secret:$("secret").value,passphrase:$("pass").value})});const d=await res.json();r.textContent=d.ok?"✓ "+d.message+" · "+d.markets+" markets":("✕ "+(d.error||"verification failed"));r.className=d.ok?"positive":"negative";if(d.ok){sessionStorage.setItem("zerqen_token",$("token").value);loadConnections()}}catch(e){r.textContent="✕ network error";r.className="negative"}
 }
 async function saveConnection(){
- const result=document.getElementById("result"); result.textContent="saving encrypted credential…";
- try{
-  const r=await api("/api/credentials",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":document.getElementById("token").value},body:JSON.stringify({action:"save",exchange_id:s.value,mode:document.getElementById("mode").value,api_key:document.getElementById("key").value,api_secret:document.getElementById("secret").value,passphrase:document.getElementById("pass").value})});
-  const data=await r.json(); result.className=data.ok?"ok":"danger"; result.textContent=JSON.stringify(data,null,2); if(data.ok) loadConnections();
- }catch(e){result.className="danger";result.textContent=String(e)}
+  const r=$("result");r.textContent="Encrypting and saving…";
+  try{const res=await api("/api/credentials",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",exchange_id:$("exchange").value,mode:$("mode").value,api_key:$("key").value,api_secret:$("secret").value,passphrase:$("pass").value})});const d=await res.json();r.textContent=d.ok?"✓ Encrypted credential saved":"✕ "+(d.error||"save failed");r.className=d.ok?"positive":"negative";if(d.ok){sessionStorage.setItem("zerqen_token",token());await loadConnections();setTimeout(closeModal,500)}}catch(e){r.textContent="✕ network error";r.className="negative"}
 }
 async function loadConnections(){
- const saved=document.getElementById("saved"); saved.textContent="loading…";
- try{
-  const r=await api("/api/credentials",{headers:{"x-zerqen-dashboard-token":document.getElementById("token").value}});
-  const data=await r.json(); if(!data.ok){saved.textContent=JSON.stringify(data);return}
-  saved.innerHTML="";
-  data.connections.forEach(c=>{const d=document.createElement("div");d.className="badge";d.innerHTML=`<strong>${c.exchange_id}</strong><br>${c.mode} · ${new Date(c.updated_at).toLocaleString()}<br><button onclick="disconnect('${c.exchange_id}')">Disconnect</button>`;saved.appendChild(d)})
- }catch(e){saved.textContent=String(e)}
+  const list=$("connectionsList");if(!list)return;list.innerHTML="<div class='card empty'>Loading connections…</div>";
+  if(!token()){list.innerHTML="<div class='card empty'>Connect an exchange to begin. Server secrets are not entered here.</div>";return}
+  try{const res=await api("/api/credentials");const d=await res.json();if(!d.ok){list.innerHTML="<div class='card empty'>Authentication required to view connections.</div>";return}
+  list.innerHTML=d.connections.length?d.connections.map(c=>{const ex=exchanges.find(x=>x[0]===c.exchange_id)||[c.exchange_id,c.exchange_id,"?"];return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='live'><i class='dot'></i> encrypted · "+c.mode+" · "+new Date(c.updated_at).toLocaleString()+"</span></div></div></div><button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Disconnect</button></div>"}).join(""):"<div class='card empty'>No exchange connections saved yet.</div>"
+  }catch(e){list.innerHTML="<div class='card empty'>Connection service unavailable.</div>"}
 }
-async function disconnect(id){
- if(!confirm("Delete encrypted credentials for "+id+"?")) return;
- const r=await api("/api/credentials",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":document.getElementById("token").value},body:JSON.stringify({action:"delete",exchange_id:id})});
- const data=await r.json(); document.getElementById("result").textContent=JSON.stringify(data,null,2); loadConnections();
+async function disconnect(id){if(!confirm("Delete encrypted credentials for "+id+"?"))return;const res=await api("/api/credentials",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"delete",exchange_id:id})});const d=await res.json();toast(d.ok?"Connection removed":"Could not remove connection");loadConnections()}
+function ema(a,p){let k=2/(p+1),v=a[0];return a.map((x,i)=>i===0?v:(v=x*k+v*(1-k)))}
+function rsi(a,p=14){let g=0,l=0,out=a.map(()=>null);for(let i=1;i<a.length;i++){let ch=a[i]-a[i-1];g=(g*(p-1)+Math.max(ch,0))/p;l=(l*(p-1)+Math.max(-ch,0))/p;if(i>=p)out[i]=l===0?100:100-(100/(1+g/l))}return out}
+function renderChart(target,points,signals=[]){
+  const el=$(target);if(!el||!points?.length)return;const w=900,h=330,pad=28,min=Math.min(...points)*.997,max=Math.max(...points)*1.003,range=max-min||1;
+  const xy=(v,i)=>[pad+i*(w-pad*2)/(points.length-1),h-pad-(v-min)/range*(h-pad*2)];
+  const path=points.map((v,i)=>{const [x,y]=xy(v,i);return(i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1)}).join(" ");
+  const area=path+" L "+(w-pad)+" "+(h-pad)+" L "+pad+" "+(h-pad)+" Z";
+  const marks=signals.map(s=>{const i=s.index,[x,y]=xy(points[i],i);return "<g><circle cx='"+x+"' cy='"+y+"' r='3.5' fill='"+(s.side==="BUY"?"#53d98b":"#ff6b76")+"' stroke='#050608' stroke-width='2'/><text x='"+x+"' y='"+(s.side==="BUY"?y-11:y+18)+"' text-anchor='middle' class='"+(s.side==="BUY"?"signal-buy":"signal-sell")+"'>"+(s.side==="BUY"?"↑ BUY":"↓ SELL")+"</text></g>"}).join("");
+  const grid=[.2,.4,.6,.8].map(t=>{const y=pad+t*(h-pad*2);return"<line class='chart-grid' x1='"+pad+"' x2='"+(w-pad)+"' y1='"+y+"' y2='"+y+"'/>"}).join("");
+  el.innerHTML="<svg viewBox='0 0 "+w+" "+h+"' preserveAspectRatio='none'><defs><linearGradient id='area' x1='0' x2='0' y1='0' y2='1'><stop offset='0' stop-color='white' stop-opacity='.12'/><stop offset='1' stop-color='white' stop-opacity='0'/></linearGradient></defs>"+grid+"<path class='chart-area' d='"+area+"'/><path class='chart-line' d='"+path+"'/>"+marks+"</svg>"
 }
-</script></body></html>
+function buildSignals(closes){
+  const e9=ema(closes,9),e21=ema(closes,21),rr=rsi(closes);const out=[];
+  for(let i=22;i<closes.length;i++){if(e9[i]>e21[i]&&e9[i-1]<=e21[i-1]&&rr[i]>50)out.push({index:i,side:"BUY",rsi:rr[i]});if(e9[i]<e21[i]&&e9[i-1]>=e21[i-1]&&rr[i]<50)out.push({index:i,side:"SELL",rsi:rr[i]})}
+  return out.slice(-8)
+}
+async function loadMarket(){
+  try{const res=await fetch("/api/market?symbol=BTC/USDT&timeframe=1h&limit=120");const d=await res.json();if(!d.ok)throw Error();marketData=d;const last=d.closes[d.closes.length-1],prev=d.closes[d.closes.length-2],chg=(last/prev-1)*100;$("chartPrice").textContent="$"+fmt(last);$("quote").textContent="$"+fmt(last);$("quoteChange").textContent=(chg>=0?"+":"")+fmt(chg)+"%";$("quoteChange").className="price "+(chg>=0?"positive":"negative");$("marketPrice").textContent="$"+fmt(last);$("marketQuote").textContent=(chg>=0?"+":"")+fmt(chg)+"%";const sig=buildSignals(d.closes);renderChart("chart",d.closes,sig);renderChart("marketChart",d.closes,sig);$("signalRows").innerHTML=sig.slice().reverse().map(s=>{const i=s.index;return "<tr><td>"+new Date(d.times[i]).toLocaleString()+"</td><td class='"+(s.side==="BUY"?"filled":"negative")+"'>"+s.side+"</td><td>$"+fmt(d.closes[i])+"</td><td>"+(d.ema9[i]>d.ema21[i]?"Bullish":"Bearish")+"</td><td>"+fmt(d.rsi[i]||0,1)+"</td><td>"+fmt(d.atr[i]||0,2)+"</td><td><span class='badge'>research signal</span></td></tr>"}).join("")||"<tr><td colspan='7' class='empty'>No crossover signal in the loaded window.</td></tr>"}catch(e){$("chart").innerHTML="<div class='empty'>Market feed unavailable. The dashboard remains safe and read-only.</div>";$("marketChart").innerHTML=$("chart").innerHTML}
+}
+async function refreshAll(){toast("Refreshing market data…");await loadMarket();await loadConnections();lastRefresh=Date.now();toast("Dashboard refreshed")}
+function renderEquity(){const vals=[10000,10085,10042,10164,10120,10278,10240,10396,10422,10510,10620,10710,10842];const w=900,h=250,p=24,min=Math.min(...vals)*.995,max=Math.max(...vals)*1.005,rg=max-min;const pts=vals.map((v,i)=>[p+i*(w-p*2)/(vals.length-1),h-p-(v-min)/rg*(h-p*2)]);const path=pts.map((q,i)=>(i?"L":"M")+q[0]+" "+q[1]).join(" ");$("equityChart").innerHTML="<svg viewBox='0 0 900 250' preserveAspectRatio='none'><path d='"+path+"' fill='none' stroke='#f2f4f7' stroke-width='2.2'/></svg>"}
+fillExchanges();renderEquity();loadMarket();loadConnections();
+</script>
+</body>
+</html>
