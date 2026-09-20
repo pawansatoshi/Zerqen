@@ -187,12 +187,21 @@ def api_home():
 
 @app.get("/api/health")
 def health():
+    token_configured = bool(os.environ.get("ZERQEN_DASHBOARD_TOKEN"))
+    vault_configured = bool(os.environ.get("ZERQEN_VAULT_KEY"))
+    database_configured = bool(os.environ.get("DATABASE_URL"))
+    configured = token_configured and vault_configured and database_configured
     return {
-        "ok": True,
+        "ok": configured,
         "service": "zerqen",
         "market_data": "public REST + browser WebSocket",
         "execution": "guarded",
         "live_trading_default": False,
+        "configuration": {
+            "dashboard_auth": token_configured,
+            "credential_vault": vault_configured,
+            "database": database_configured,
+        },
         "time": datetime.now(timezone.utc).isoformat(),
     }
 
