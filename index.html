@@ -140,7 +140,7 @@ async function loadConnections(){
   if(!token()){list.innerHTML="<div class='card empty'>Connect an exchange to begin. Server secrets are not entered here.</div>";return}
   try{const res=await api("/api/credentials");const d=await res.json();if(!d.ok){list.innerHTML="<div class='card empty'>Authentication required to view connections.</div>";return}
   list.innerHTML=d.connections.length?d.connections.map(c=>{const ex=exchanges.find(x=>x[0]===c.exchange_id)||[c.exchange_id,c.exchange_id,"?"];return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='live'><i class='dot'></i> encrypted · "+c.mode+" · "+new Date(c.updated_at).toLocaleString()+"</span></div></div></div><button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Disconnect</button></div>"}).join(""):"<div class='card empty'>No exchange connections saved yet.</div>";
-  if(d.connections.length) loadAccount(d.connections[0].exchange_id);
+  if(d.connections.length){activeExchange=d.connections[0].exchange_id;loadAccount(activeExchange)}
   }catch(e){list.innerHTML="<div class='card empty'>Connection service unavailable.</div>"}
 }
 async function loadAccount(exchangeId){
@@ -187,7 +187,7 @@ function setMarketStatus(state,age){
   const a=$("marketAge");if(a)a.textContent=age?("updated "+Math.max(0,Math.round((Date.now()-age)/1000))+"s ago"):"—";
   const hm=$("healthMarket");if(hm)hm.textContent=state;
 }
-let marketWs=null,marketWsRetry=null,lastTickAt=0,currentTimeframe="1h";
+let marketWs=null,marketWsRetry=null,lastTickAt=0,currentTimeframe="1h",activeExchange=null;
 function connectMarketSocket(){
   try{if(marketWs)marketWs.close();marketWs=new WebSocket("wss://stream.binance.com:9443/ws/btcusdt@ticker");
     marketWs.onopen=()=>{setMarketStatus("LIVE",lastTickAt||Date.now());if(marketWsRetry){clearTimeout(marketWsRetry);marketWsRetry=null}};
@@ -238,7 +238,7 @@ fillExchanges();renderEquity();loadHealth();loadMarket();loadConnections();conne
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);
 setInterval(loadMarket,30000);
 setInterval(loadHealth,30000);
-setInterval(()=>{const c=document.querySelector("#connectionsList .connection");if(c&&token()){const name=c.querySelector(".connection-name")?.textContent; if(name){/* account refresh stays server-side */}}},10000);
+setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
 
 </script>
 </body>
