@@ -129,16 +129,7 @@ class handler(BaseHTTPRequestHandler):
                     conn.commit()
                     return send(self, 200, {"ok": True, "saved": exchange_id, "encrypted": True})
 
-                if action == "get":
-                    row = conn.execute(
-                        "SELECT mode, nonce, ciphertext FROM zerqen_exchange_credentials WHERE exchange_id = %s",
-                        (exchange_id,),
-                    ).fetchone()
-                    if not row:
-                        return send(self, 404, {"ok": False, "error": "no saved credentials"})
-                    credentials = decrypt(exchange_id, row[1], row[2])
-                    return send(self, 200, {"ok": True, "exchange_id": exchange_id, "mode": row[0], "credentials": credentials})
-
+                # Never return decrypted exchange credentials to the browser.\n                # Trusted server-side execution can decrypt them internally when needed.\n
             return send(self, 400, {"ok": False, "error": "unsupported action"})
         except Exception as exc:
             return send(self, 500, {"ok": False, "error": type(exc).__name__ + ": " + str(exc)})
