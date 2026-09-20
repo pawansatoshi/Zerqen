@@ -53,7 +53,7 @@ async function loadConnections(){
   const r=await api("/api/credentials.py",{headers:{"x-zerqen-dashboard-token":document.getElementById("token").value}});
   const data=await r.json(); if(!data.ok){saved.textContent=JSON.stringify(data);return}
   saved.innerHTML="";
-  data.connections.forEach(c=>{const d=document.createElement("div");d.className="badge";d.innerHTML="<strong>"+c.exchange_id+"</strong><br>"+c.mode+" · "+new Date(c.updated_at).toLocaleString()+"<br><button onclick="disconnect('"+c.exchange_id+"')">Disconnect</button>";saved.appendChild(d)})
+  data.connections.forEach(c=>{const d=document.createElement("div");d.className="badge";d.innerHTML=`<strong>${c.exchange_id}</strong><br>${c.mode} · ${new Date(c.updated_at).toLocaleString()}<br><button onclick="disconnect('${c.exchange_id}')">Disconnect</button>`;saved.appendChild(d)})
  }catch(e){saved.textContent=String(e)}
 }
 async function disconnect(id){
