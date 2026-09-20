@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zerqen Exchange Connections</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:900px;margin:auto;padding:24px;background:#0b0d10;color:#f4f4f5}
+.card{background:#151922;border:1px solid #282e3a;border-radius:16px;padding:20px;margin:14px 0}
+select,input,button{width:100%;box-sizing:border-box;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #343b49;background:#0f1218;color:white}
+button{cursor:pointer;font-weight:700}.danger{color:#ffb4b4}.ok{color:#9ff0ba}.muted{color:#a6adbb}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.badge{padding:8px;border:1px solid #343b49;border-radius:10px}
+</style></head>
+<body>
+<h1>Zerqen Exchange Connections</h1>
+<p class="muted">Read-only API verification. No order is placed by this page.</p>
+<div class="card">
+<label>Exchange</label><select id="exchange"></select>
+<label>Mode</label><select id="mode"><option value="testnet">Testnet / Demo</option><option value="live">Live account — read only test</option></select>
+<label>Dashboard access token</label><input id="token" type="password" autocomplete="off">
+<label>API key</label><input id="key" type="password" autocomplete="off">
+<label>API secret</label><input id="secret" type="password" autocomplete="off">
+<label>Passphrase (OKX / Bitget / KuCoin when required)</label><input id="pass" type="password" autocomplete="off">
+<button onclick="testConnection()">Test connection</button>
+<pre id="result" class="muted"></pre>
+</div>
+<div class="card"><h2>Supported</h2><div id="list" class="grid"></div></div>
+<script>
+const exchanges=[["delta_india","Delta Exchange India"],["coindcx","CoinDCX"],["binance","Binance"],["okx","OKX"],["bybit","Bybit"],["bitget","Bitget"],["mexc","MEXC"],["kucoin","KuCoin"],["gate","Gate.io"],["wazirx","WazirX"]];
+const s=document.getElementById("exchange"); const l=document.getElementById("list");
+exchanges.forEach(([id,name])=>{s.add(new Option(name,id));const d=document.createElement("div");d.className="badge";d.textContent=name+" · API ready";l.appendChild(d)});
+async function testConnection(){
+ const result=document.getElementById("result"); result.textContent="testing…";
+ try{
+  const r=await fetch("/api/exchange_test.py",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":document.getElementById("token").value},body:JSON.stringify({exchange_id:s.value,mode:document.getElementById("mode").value,api_key:document.getElementById("key").value,api_secret:document.getElementById("secret").value,passphrase:document.getElementById("pass").value})});
+  const data=await r.json(); result.className=data.ok?"ok":"danger"; result.textContent=JSON.stringify(data,null,2);
+ }catch(e){result.className="danger";result.textContent=String(e)}
+}
+</script></body></html>
