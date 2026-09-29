@@ -75,6 +75,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
 
 <section id="paper" class="view">
   <div class="section-head"><div><h2>Execution Control Center</h2><p>Choose the execution mode. Demo is available now; real-money execution stays locked until explicitly enabled.</p></div><div style="display:flex;gap:7px"><span class="badge">DEMO READY</span><span class="badge">REAL LOCKED</span></div></div>
+  <div class="card small-card" style="margin-bottom:16px"><div class="small-title">AI decision engine · FREE ONLY</div><div style="display:flex;gap:10px;align-items:center;margin-top:10px"><span id="aiStatusBadge" class="badge">CHECKING</span><span id="aiStatusText" class="note">OpenRouter free-model registry is being checked.</span></div></div>
   <div class="card small-card" style="margin-bottom:16px"><div class="small-title">Execution mode</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
     <button id="demoModeBtn" class="primary" onclick="selectExecutionMode('demo')">DEMO · PAPER</button>
     <button id="realModeBtn" class="secondary" onclick="selectExecutionMode('real')">REAL · LOCKED</button>
@@ -534,6 +535,19 @@ async function paperToggleAuto(){
     }
   }catch(e){toast(e.message||"worker control failed")}
 }
+async function refreshAIStatus(){
+  try{
+    const r=await api("/api/ai/status",{cache:"no-store"});
+    const d=await r.json();
+    const b=$("aiStatusBadge"),t=$("aiStatusText");
+    if(!b||!t)return;
+    if(!d.enabled){b.textContent="AI OFF";t.textContent="Set OPENROUTER_API_KEY to enable the free-only AI gate.";return}
+    if(d.ok){b.textContent="FREE AI READY";t.textContent=(d.verified_free_models||0)+" verified $0 models · paid models blocked";}
+    else{b.textContent="AI HOLD";t.textContent=d.error||"Free-model registry unavailable; AI entries remain blocked."}
+  }catch(_){
+    const b=$("aiStatusBadge"),t=$("aiStatusText");if(b)b.textContent="AI UNKNOWN";if(t)t.textContent="AI status unavailable; no AI-authorized entry is permitted."
+  }
+}
 async function refreshPaperStatus(){
   try{const r=await api("/api/paper",{method:"GET"});const d=await r.json();renderPaper(d);await loadLedger()}catch(e){}
 }
@@ -608,7 +622,7 @@ async function exportLedger(format){if(!token()){toast("Dashboard token required
 selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
 setInterval(loadMarket,30000);
-setInterval(loadHealth,30000);setInterval(loadPaper,15000);
+setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(refreshAIStatus,300000);refreshAIStatus();
 setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
 
 </script>
