@@ -261,7 +261,7 @@ def ledger(
                 "fees":float(state[3]) if state else 0,
                 "funding":float(state[4]) if state else 0,
                 "slippage":float(state[5]) if state else 0,
-                "net_pnl":float(state[2])-(float(state[3]) + float(state[4]) + float(state[5])) if state else 0,
+                "net_pnl":float(state[2])-float(state[5]) if state else 0,
                 "actual_return":float((latest[0]-state[0])/state[0]) if state and latest and state[0] else 0,
                 "drawdown":float(latest[2]) if latest else 0,
                 "gross_exposure":float(latest[3]) if latest else 0,
