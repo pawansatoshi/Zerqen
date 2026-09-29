@@ -259,6 +259,9 @@ def demo_worker_get():
 async def demo_worker_post(request: Request):
     from api.demo_worker import set_enabled
     body = await request.json()
+    if body.get("action") == "heartbeat":
+        from api.demo_worker import heartbeat
+        return {"ok": True, **heartbeat()}
     if body.get("action") not in {"start", "stop"}:
         raise HTTPException(400, "action must be start or stop")
     return {"ok": True, **set_enabled(body["action"] == "start")}
