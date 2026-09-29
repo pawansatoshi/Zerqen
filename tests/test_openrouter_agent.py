@@ -9,7 +9,11 @@ def test_registry_admits_only_zero_priced_models(monkeypatch):
         {'id':'paid-a','pricing':{'prompt':'0.1','completion':'0.2'},'context_length':1000},
         {'id':'free-b','pricing':{'prompt':'0','completion':'0'},'context_length':2000},
     ]}
-    monkeypatch.setattr(agent, '_http_json', lambda method, url, payload=None: payload)
+    monkeypatch.setattr(agent, '_http_json', lambda method, url, payload=None: {'data': [
+        {'id':'free-a','pricing':{'prompt':'0','completion':'0'},'context_length':1000},
+        {'id':'paid-a','pricing':{'prompt':'0.1','completion':'0.2'},'context_length':1000},
+        {'id':'free-b','pricing':{'prompt':'0','completion':'0'},'context_length':2000},
+    ]})
     registry = agent.FreeModelRegistry()
     models = registry.refresh(force=True)
     ids = {m.model_id for m in models}
@@ -33,7 +37,7 @@ def test_paid_model_can_never_be_called(monkeypatch):
 
 def test_new_free_model_is_discovered(monkeypatch):
     payload = {'data': [{'id':'new-free','pricing':{'prompt':'0','completion':'0'},'context_length':4000}]}
-    monkeypatch.setattr(agent, '_http_json', lambda method, url, payload=None: payload)
+    monkeypatch.setattr(agent, '_http_json', lambda method, url, payload=None: {'data': [{'id':'new-free','pricing':{'prompt':'0','completion':'0'},'context_length':4000}]})
     registry = agent.FreeModelRegistry()
     models = registry.refresh(force=True)
     assert any(m.model_id == 'new-free' for m in models)
