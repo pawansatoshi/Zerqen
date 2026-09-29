@@ -439,7 +439,7 @@ def account(
                             "leverage": p.get("leverage"),
                         })
             except Exception:  # noqa: BLE001
-                pass
+                positions.clear()
 
         trades = []
         if ex.has.get("fetchMyTrades"):
@@ -459,7 +459,7 @@ def account(
                         "fee_currency": fee.get("currency"),
                     })
             except Exception:  # noqa: BLE001
-                pass
+                trades.clear()
 
         return {
             "ok": True,
