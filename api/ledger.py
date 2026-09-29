@@ -131,7 +131,7 @@ def _filters(args):
     for key,col in (("date_from","entry_timestamp"),("date_to","entry_timestamp")):
         value=args.get(key)
         if value:
-            clauses.append(f"{col} {'>=' if key=='date_from' else '<'} %s")
+            clauses.append(f"{col}::date {'>=' if key=='date_from' else '<='} %s")
             vals.append(value)
     for key,col in (("exchange","exchange_id"),("symbol","symbol"),("strategy","strategy"),("side","side"),("status","status")):
         value=args.get(key)
