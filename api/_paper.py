@@ -539,6 +539,8 @@ class handler(BaseHTTPRequestHandler):
                     timeframe=str(state[14])
                     if side not in {"buy","sell"}:
                         return send(self,400,{"ok":False,"error":"side must be buy or sell"})
+                    scanner_requested=bool(data.get("scanner",False))
+                    state=rollover_if_new_day(conn,state)
                     if bool(state[11]):
                         return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
                     if bool(state[16]):
@@ -550,6 +552,11 @@ class handler(BaseHTTPRequestHandler):
                     vol=volatility_profile(rows)
                     if not vol.get("ok") or vol["atr_pct"] > PaperLimits().max_atr_pct or vol["max_bar_pct"] > PaperLimits().max_bar_pct:
                         return send(self,409,{"ok":False,"error":"volatility protection rejected this asset"})
+                    regime=classify_regime([D(str(r[4])) for r in rows],e9,e21,rsi)
+                    if scanner_requested:
+                        direction_ok=(side=="buy" and regime=="trend_up" and rsi>=D("50")) or (side=="sell" and regime=="trend_down" and rsi<=D("50"))
+                        if not direction_ok:
+                            return send(self,409,{"ok":False,"error":"scanner signal failed server-side direction revalidation"})
                     structural_stop=dynamic_structural_stop(rows,side,price,atr)
                     values=equity(conn,prices)
                     eq=values[0] if values else D(str(state[2]))
