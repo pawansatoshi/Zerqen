@@ -249,7 +249,30 @@ def ledger(
                 WHERE account_id='default' ORDER BY created_at ASC LIMIT 5000""",[])
             audit=_rows(conn,"""SELECT event_id,event_type,payload,created_at FROM zerqen_paper_events
                 WHERE account_id='default' ORDER BY created_at DESC LIMIT 2000""",[])
+            state=conn.execute("""SELECT starting_equity,cash,realized_pnl,fees,funding,slippage,halted,paused,exchange_id,symbol,timeframe FROM zerqen_paper_state WHERE account_id='default'""").fetchone()
+            latest=conn.execute("SELECT equity,unrealized_pnl,drawdown,gross_exposure,open_risk,allocation FROM zerqen_paper_equity_snapshots WHERE account_id='default' ORDER BY created_at DESC LIMIT 1").fetchone()
+            account={
+                "initialized":bool(state),
+                "starting_capital":float(state[0]) if state else 0,
+                "current_equity":float(latest[0]) if latest else float(state[1]) if state else 0,
+                "available_capital":float(state[1]) if state else 0,
+                "reserved_capital":float(latest[3]) if latest else 0,
+                "realized_pnl":float(state[2]) if state else 0,
+                "unrealized_pnl":float(latest[1]) if latest else 0,
+                "fees":float(state[3]) if state else 0,
+                "funding":float(state[4]) if state else 0,
+                "slippage":float(state[5]) if state else 0,
+                "net_pnl":float(state[2])-(float(state[3]) + float(state[4]) + float(state[5])) if state else 0,
+                "actual_return":float((latest[0]-state[0])/state[0]) if state and latest and state[0] else 0,
+                "drawdown":float(latest[2]) if latest else 0,
+                "gross_exposure":float(latest[3]) if latest else 0,
+                "open_risk":float(latest[4]) if latest else 0,
+                "allocation":float(latest[5]) if latest else 0,
+                "exchange_id":state[8] if state else None,"symbol":state[9] if state else None,"timeframe":state[10] if state else None,
+                "halted":bool(state[6]) if state else False,"paused":bool(state[7]) if state else False,
+            }
             return {"ok":True,"mode":"PAPER","live_capital":False,
+                    "account":account,
                     "research_hurdle":0.08,"research_hurdle_label":"Research hurdle — not a trading requirement",
                     "summary":_summary(conn,where,vals),"daily_compounding":_daily(conn,date_from,date_to),
                     "trades":[_trade_dict(tuple(d.values())) for d in trades],
