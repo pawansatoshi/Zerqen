@@ -14,8 +14,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 app = FastAPI(title="Zerqen API", version="0.1.0")
 
 from api.ledger import router as ledger_router
+from api.backtest import router as backtest_router
 
 app.include_router(ledger_router)
+app.include_router(backtest_router)
 
 
 EXCHANGES = {
@@ -240,6 +242,11 @@ def market(
         raise
     except Exception:  # noqa: BLE001
         return safe_error("market data temporarily unavailable")
+
+
+@app.get("/api/backtest/health")
+def backtest_health():
+    return {"ok": True, "mode": "BACKTEST", "markets": ["spot", "futures"], "live_trading": False}
 
 
 @app.get("/api/fx")
