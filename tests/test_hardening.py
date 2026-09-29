@@ -1,6 +1,4 @@
 import pandas as pd
-import pytest
-
 from zerqen.config import ZerqenConfig
 from zerqen.data_quality import validate_ohlcv
 from zerqen.orders import Order, OrderSide, OrderStateMachine, OrderStatus
