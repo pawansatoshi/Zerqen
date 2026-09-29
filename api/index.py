@@ -262,7 +262,7 @@ def fx(base: str = Query("USD"), quote: str = Query("INR")):
             payload = json.loads(response.read().decode())
         rate = float(payload["rates"]["INR"])
         return {"ok": True, "base": "USD", "quote": "INR", "rate": rate, "source": "Frankfurter"}
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         return safe_error("live USD/INR conversion temporarily unavailable")
 
 @app.get("/api/scanner")
@@ -309,9 +309,9 @@ def scanner(
             atr_pct=(sum(tr[-14:])/max(len(tr[-14:]),1))/closes[-1]
             max_bar_pct=max(((highs[i]-lows[i])/closes[i] for i in range(max(1,len(closes)-20),len(closes))),default=0)
             volatility_ok=atr_pct<=0.05 and max_bar_pct<=0.08
+            avgvol=sum(vols[-21:-1])/max(len(vols[-21:-1]),1); volratio=vols[-1]/avgvol if avgvol else 0
             liquidity_ok=0.5<=volratio<=3.0
             momentum=(closes[-1]/closes[-6]-1)*100
-            avgvol=sum(vols[-21:-1])/max(len(vols[-21:-1]),1); volratio=vols[-1]/avgvol if avgvol else 0
             trend=1 if e9[-1]>e21[-1] else -1
             momentum_score=max(0,min(25,50+momentum*4)) if trend>0 else max(0,min(25,50-momentum*4))
             rsi_score=max(0,25-abs(rsi-(60 if trend>0 else 40))*0.9)
@@ -328,10 +328,11 @@ def scanner(
                 try:
                     x=f.result()
                     if x: results.append(x)
-                except Exception: pass
+                except Exception:  # noqa: BLE001
+                continue
         results.sort(key=lambda x:x["score"], reverse=True)
         return {"ok":True,"exchange":"binance","quote":"USDT","timeframe":timeframe,"scanned":len(ranked),"results":results[:limit],"generated_at":datetime.now(timezone.utc).isoformat()}
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         return safe_error("top-50 market scanner temporarily unavailable")
 
 @app.get("/api/exchange_status")
