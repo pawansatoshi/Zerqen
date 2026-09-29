@@ -15,10 +15,10 @@ def test_risk_sizing_is_fixed_fractional():
     limits = PaperLimits()
     result = size_for_risk(D(10000), D(100), D(2), limits)
     assert result.allowed
-    assert result.risk_amount == D(50.000)
+    assert result.risk_amount == D("50.000")
     assert result.quantity > 0
-    assert result.stop_price == D(97.0)
-    assert result.target_price == D(106.0)
+    assert result.stop_price == D("97.0")
+    assert result.target_price == D("106.0")
 
 
 def test_daily_loss_breaker_blocks_new_risk():
@@ -58,16 +58,16 @@ def test_gross_exposure_cap_blocks_new_risk():
 
 
 def test_partial_fill_then_close_realizes_net_pnl():
-    position, _ = apply_fill(None, "buy", D(1), D(100), D(0.10))
+    position, _ = apply_fill(None, "buy", D(1), D(100), D("0.10"))
     position.symbol = "BTC/USDT"
     assert position.quantity == D(1)
-    position, realized2 = apply_fill(position, "sell", D(0.4), D(110), D(0.05))
+    position, realized2 = apply_fill(position, "sell", D("0.4"), D(110), D("0.05"))
     assert position is not None
-    assert position.quantity == D(0.6)
-    assert realized2 == D(3.91)
-    position, realized3 = apply_fill(position, "sell", D(0.6), D(90), D(0.05))
+    assert position.quantity == D("0.6")
+    assert realized2 == D("3.91")
+    position, realized3 = apply_fill(position, "sell", D("0.6"), D(90), D("0.05"))
     assert position is None
-    assert realized3 == D(-6.11)
+    assert realized3 == D("-6.11")
     assert mark_position(Position("BTC/USDT", "buy", D(1), D(100)), D(105)) == D(5)
 
 
