@@ -31,7 +31,6 @@ def test_paid_model_can_never_be_called(monkeypatch):
 
 
 def test_new_free_model_is_discovered(monkeypatch):
-    payload = {'data': [{'id':'new-free','pricing':{'prompt':'0','completion':'0'},'context_length':4000}]}
     monkeypatch.setattr(agent, '_http_json', lambda method, url, payload=None: {'data': [{'id':'new-free','pricing':{'prompt':'0','completion':'0'},'context_length':4000}]})
     registry = agent.FreeModelRegistry()
     models = registry.refresh(force=True)
