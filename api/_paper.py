@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from zerqen.paper_engine import (PaperLimits, Position, apply_fill, check_portfolio_risk, size_for_risk, volatility_profile, classify_regime, dynamic_structural_stop)
 from zerqen.strategy_registry import eligible_strategies
 from zerqen.openrouter_agent import FreeOnlyViolation, evaluate_setup
+from zerqen.market_intelligence import build_report, enter_safe_mode, exit_safe_mode, report_for_ai, should_use_safe_mode
 
 
 def send(handler, status, payload):
@@ -185,6 +186,40 @@ def fetch_public_market(exchange_id, symbol, timeframe="1h", limit=120):
         for i in range(len(result["closes"]))
     ]
     return D(str(ticker["last"])), rows
+
+
+def ai_gate_for_setup(exchange_id, symbol, timeframe, signal, price, regime, ema9, ema21, rsi, atr, atr_pct, max_bar_pct, volatility_ok, portfolio):
+    report = build_report(exchange_id, symbol, portfolio=portfolio, risk={
+        "volatility_ok": volatility_ok,
+        "max_stop_distance": str(PaperLimits().max_stop_distance),
+        "min_risk_reward": float(PaperLimits().min_risk_reward),
+    })
+    context = report_for_ai(report)
+    context.update({
+        "signal": signal,
+        "timeframe": timeframe,
+        "deterministic": {
+            "regime": regime, "ema9": str(ema9), "ema21": str(ema21), "rsi": str(rsi),
+            "atr": str(atr), "atr_pct": str(atr_pct), "max_bar_pct": str(max_bar_pct),
+            "volatility_ok": volatility_ok,
+        },
+    })
+    try:
+        result = evaluate_setup(context)
+        exit_safe_mode()
+        return result, False, report
+    except FreeOnlyViolation:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        enter_safe_mode(str(exc))
+        if should_use_safe_mode():
+            return {
+                "enabled": True, "decision": signal, "confidence": 0.0,
+                "reason": "AI unavailable; deterministic paper safe mode active",
+                "model": None, "risk_flags": ["AI_SAFE_MODE"], "attempts": [],
+                "report_hash": report.report_hash,
+            }, True, report
+        raise
 
 
 def fetch_prices(exchange_id, symbols, timeframe="1h"):
@@ -590,18 +625,16 @@ class handler(BaseHTTPRequestHandler):
                             reason="strategy signal passed deterministic risk gate"
                             if os.getenv("OPENROUTER_API_KEY"):
                                 try:
-                                    ai_result=evaluate_setup({
-                                        "symbol":symbol,"timeframe":timeframe,"price":str(prices[symbol]),
-                                        "signal":signal_side,"regime":regime,"ema9":str(e9[-1]),"ema21":str(e21[-1]),
-                                        "rsi":str(rsi),"atr":str(atr),"atr_pct":str(vol.get("atr_pct")),
-                                        "max_bar_pct":str(vol.get("max_bar_pct")),"volatility_ok":volatility_ok,
-                                        "equity":str(eq),"daily_pnl":str(daily),"drawdown":str(dd),
-                                        "gross_exposure":str(gross),"open_positions":open_positions,
-                                        "risk_per_trade":str(PaperLimits().risk_per_trade),
-                                        "max_stop_distance":str(PaperLimits().max_stop_distance),
-                                        "min_risk_reward":str(PaperLimits().min_risk_reward),
-                                    })
+                                    ai_result, safe_mode_used, intelligence_report = ai_gate_for_setup(
+                                        exchange_id, symbol, timeframe, signal_side, prices[symbol],
+                                        regime, e9[-1], e21[-1], rsi, atr, vol.get("atr_pct"),
+                                        vol.get("max_bar_pct"), volatility_ok,
+                                        {"equity":str(eq),"daily_pnl":str(daily),"drawdown":str(dd),
+                                         "gross_exposure":str(gross),"open_positions":open_positions},
+                                    )
                                     min_conf=float(os.getenv("ZERQEN_AI_MIN_CONFIDENCE","0.60"))
+                                    if safe_mode_used:
+                                        event(conn,"AI_SAFE_MODE_ENTERED",{"symbol":symbol,"report_hash":intelligence_report.report_hash})
                                     ai_side=str(ai_result.get("decision","HOLD")).upper()
                                     flags=ai_result.get("risk_flags") or []
                                     if ai_side != signal_side or float(ai_result.get("confidence",0)) < min_conf or flags:
@@ -666,16 +699,15 @@ class handler(BaseHTTPRequestHandler):
                             return send(self,409,{"ok":False,"error":"scanner signal failed server-side direction revalidation"})
                         if os.getenv("OPENROUTER_API_KEY"):
                             try:
-                                ai_result=evaluate_setup({
-                                    "symbol":symbol,"timeframe":timeframe,"price":str(price),"signal":side.upper(),
-                                    "regime":regime,"ema9":str(e9[-1]),"ema21":str(e21[-1]),"rsi":str(rsi),
-                                    "atr":str(atr),"atr_pct":str(vol.get("atr_pct")),"max_bar_pct":str(vol.get("max_bar_pct")),
-                                    "volatility_ok":bool(vol.get("ok")),"equity":str(eq if 'eq' in locals() else D(str(state[2]))),
-                                    "risk_per_trade":str(PaperLimits().risk_per_trade),
-                                    "max_stop_distance":str(PaperLimits().max_stop_distance),
-                                    "min_risk_reward":str(PaperLimits().min_risk_reward),
-                                })
+                                ai_result, safe_mode_used, intelligence_report = ai_gate_for_setup(
+                                    exchange_id, symbol, timeframe, side.upper(), price,
+                                    regime, e9[-1], e21[-1], rsi, atr, vol.get("atr_pct"),
+                                    vol.get("max_bar_pct"), bool(vol.get("ok")),
+                                    {"equity":str(eq if 'eq' in locals() else D(str(state[2])))},
+                                )
                                 min_conf=float(os.getenv("ZERQEN_AI_MIN_CONFIDENCE","0.60"))
+                                if safe_mode_used:
+                                    event(conn,"AI_SAFE_MODE_ENTERED",{"symbol":symbol,"report_hash":intelligence_report.report_hash})
                                 if (str(ai_result.get("decision","HOLD")).upper()!=side.upper()
                                     or float(ai_result.get("confidence",0))<min_conf
                                     or ai_result.get("risk_flags")):
