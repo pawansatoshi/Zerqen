@@ -115,7 +115,7 @@ class handler(BaseHTTPRequestHandler):
             })
         except ValueError:
             return send(self, 400, {"ok": False, "error": "invalid market query"})
-        except Exception:
+        except Exception:  # noqa: BLE001
             return send(self, 502, {"ok": False, "error": "market data temporarily unavailable"})
 
     def do_OPTIONS(self):
