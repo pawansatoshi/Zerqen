@@ -352,6 +352,20 @@ def event(conn, event_type, payload):
 
 
 
+
+def rollover_if_new_day(conn, state):
+    last = state[19]
+    if not last or last.date() == now().date():
+        return state
+    positions = fetch_positions(conn)
+    prices = fetch_prices(str(state[12]), [p.symbol for p in positions], str(state[14])) if positions else {}
+    values = equity(conn, prices)
+    closing_equity = values[0] if values else D(str(state[2]))
+    conn.execute("UPDATE zerqen_paper_state SET day_start_equity=%s,daily_target_hit=FALSE,paused=FALSE,consecutive_losses=0,cooldown_until=NULL,last_marked_at=%s,updated_at=%s WHERE account_id='default'",(closing_equity,now(),now()))
+    event(conn,"DAILY_COMPOUNDING_ROLLOVER",{"previous_day_closing_equity":str(closing_equity),"new_daily_target":str(closing_equity*PaperLimits().daily_target)})
+    conn.commit()
+    return get_state(conn)
+
 def enforce_daily_target(conn, state, daily_pnl):
     target = D(str(state[8])) * PaperLimits().daily_target
     if daily_pnl >= target and not bool(state[16]):
