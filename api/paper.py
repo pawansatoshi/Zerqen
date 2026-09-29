@@ -395,11 +395,13 @@ class handler(BaseHTTPRequestHandler):
                     risk=size_for_risk(eq,price,atr,PaperLimits(),side)
                     qty=D(str(data.get("quantity",risk.quantity)))
                     if qty<=0: return send(self,400,{"ok":False,"error":"quantity must be positive"})
-                    risk=RiskResult=True
                     # This is an explicit PAPER execution harness, not a strategy signal.
                     positions=fetch_positions(conn)
                     proposed_risk=size_for_risk(eq,price,atr,PaperLimits(),side)
-                    allowed,reason=check_portfolio_risk(eq,positions,proposed_risk,PaperLimits(),state_values[4] if state_values else D("0"),D(str(state[7])),proposed_notional=qty*price)
+                    limits=PaperLimits()
+                    if qty*price > eq*limits.max_strategy_allocation:
+                        return send(self,409,{"ok":False,"error":"strategy allocation cap exceeded"})
+                    allowed,reason=check_portfolio_risk(eq,positions,proposed_risk,limits,state_values[4] if state_values else D("0"),D(str(state[7])),proposed_notional=qty*price)
                     if not allowed: return send(self,409,{"ok":False,"error":reason})
                     oid="paper-"+uuid.uuid4().hex
                     t=now()
