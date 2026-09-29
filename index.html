@@ -411,8 +411,9 @@ async function scanTop50(){
     $("scannerRows").innerHTML=d.results.slice(0,15).map((x,i)=>"<tr><td>"+(i+1)+"</td><td><strong>"+x.symbol+"</strong></td><td class='"+(x.side==="BUY"?"filled":x.side==="SELL"?"negative":"")+"'>"+x.side+"</td><td>"+x.score+"</td><td>"+(x.change24h>=0?"+":"")+fmt(x.change24h)+"%</td><td>"+fmt(x.rsi,1)+"</td><td>"+x.emaTrend+"</td><td>"+(x.momentum>=0?"+":"")+fmt(x.momentum)+"%</td><td>"+fmt(x.volumeRatio,2)+"x</td><td><button class='connect-btn' onclick='takeScannerTrade("+JSON.stringify(x.symbol)+","+JSON.stringify(x.side)+")'>TAKE DEMO</button></td></tr>").join("");
     if(best&&best.side!=="WATCH"){
       const key=best.symbol+":"+best.side;
-      if(window.lastScannerAlert!==key){window.lastScannerAlert=key;playAlert(best.side);toast(best.side+" setup detected · "+best.symbol)}
-      if(autoDemoTimer && $("executionModeMessage").textContent.startsWith("Demo")) await takeScannerTrade(best.symbol,best.side,true);
+      const isNewSetup=window.lastScannerAlert!==key;
+      if(isNewSetup){window.lastScannerAlert=key;playAlert(best.side);toast(best.side+" setup detected · "+best.symbol)}
+      if(isNewSetup && autoDemoTimer && $("executionModeMessage").textContent.startsWith("Demo")) await takeScannerTrade(best.symbol,best.side,true);
     }
   }catch(_){$("scannerState").textContent="FAILED";toast("top-50 scanner request failed")}
 }
