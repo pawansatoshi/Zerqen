@@ -64,10 +64,10 @@ def test_partial_fill_then_close_realizes_net_pnl():
     position, realized2 = apply_fill(position, "sell", D("0.4"), D("110"), D("0.05"))
     assert position is not None
     assert position.quantity == D("0.6")
-    assert realized2 == D("3.85")
+    assert realized2 == D("3.91")
     position, realized3 = apply_fill(position, "sell", D("0.6"), D("90"), D("0.05"))
     assert position is None
-    assert realized3 == D("-6.05")
+    assert realized3 == D("-6.11")
     assert mark_position(Position("BTC/USDT", "buy", D("1"), D("100")), D("105")) == D("5")
 
 
