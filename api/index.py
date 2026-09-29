@@ -329,7 +329,7 @@ def scanner(
                     x=f.result()
                     if x: results.append(x)
                 except Exception:  # noqa: BLE001
-                continue
+                    continue
         results.sort(key=lambda x:x["score"], reverse=True)
         return {"ok":True,"exchange":"binance","quote":"USDT","timeframe":timeframe,"scanned":len(ranked),"results":results[:limit],"generated_at":datetime.now(timezone.utc).isoformat()}
     except Exception:  # noqa: BLE001
