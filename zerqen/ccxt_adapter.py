@@ -65,7 +65,7 @@ class CCXTExchangeAdapter(ExchangeAdapter):
                 order.symbol, order.order_type, side, order.quantity,
                 reference_price if order.order_type.lower() == "limit" else None, params,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return AdapterResult(order.client_order_id, OrderStatus.UNKNOWN, None,
                                  f"exchange submission outcome unknown: {type(exc).__name__}")
         status = self._status(result.get("status"))
