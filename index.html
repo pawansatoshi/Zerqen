@@ -437,10 +437,10 @@ async function paperCycle(){
     const decision=(d.events||[]).find(e=>e.type==="STRATEGY_DECISION" && e.payload?.risk_decision==="APPROVED");
     const hasPosition=(d.positions||[]).some(p=>p.symbol===d.symbol);
     if(decision && !hasPosition){
-      const er=await paperApi("test_order",{symbol:d.symbol,side:decision.payload?.signal==="SELL"?"sell":"buy"});
+      const er=await paperApi("test_order",{symbol:d.symbol,side:decision.payload?.signal_direction==="SELL"?"sell":"buy"});
       const ed=await er.json();
       renderPaper(ed);
-      if(ed.ok){ $("paperMessage").textContent="DEMO execution filled from approved strategy signal"; playAlert(decision.payload?.signal==="SELL"?"SELL":"BUY"); }
+      if(ed.ok){ $("paperMessage").textContent="DEMO execution filled from approved strategy signal"; playAlert(decision.payload?.signal_direction==="SELL"?"SELL":"BUY"); }
     }
   }
   await loadLedger();
