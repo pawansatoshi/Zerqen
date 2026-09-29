@@ -267,7 +267,6 @@ def ledger(
                 "actual_return":float((latest[0]-state[0])/state[0]) if state and latest and state[0] else 0,
                 "drawdown":float(latest[2]) if latest else 0,
                 "max_drawdown":float(max_dd or 0),
-                "max_drawdown":float(max_dd or 0),
                 "gross_exposure":float(latest[3]) if latest else 0,
                 "open_risk":float(latest[4]) if latest else 0,
                 "allocation":float(latest[5]) if latest else 0,
