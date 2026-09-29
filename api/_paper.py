@@ -431,7 +431,7 @@ class handler(BaseHTTPRequestHandler):
                     prices=fetch_prices(exchange_id,[symbol],timeframe)
                     for symbol in prices:
                         rows=fetch_candles(exchange_id,symbol,timeframe)
-                        closes,e9,e21,atr,rsi=indicators(rows)
+                        _,e9,e21,atr,rsi=indicators(rows)
                         regime="trend_up" if e9[-1]>e21[-1] else "range"
                         signal=e9[-1]>e21[-1] and e9[-2]<=e21[-2] and D(50)<=rsi<=D(75)
                         signal_id="signal-"+uuid.uuid4().hex
@@ -542,7 +542,7 @@ class handler(BaseHTTPRequestHandler):
                             entry_side=str(existing_raw[0])
                             entry_qty=D(str(existing_raw[1]))
                             close_qty=min(entry_qty,qty)
-                            direction=D("1") if entry_side=="buy" else D("-1")
+                            direction=D(1) if entry_side=="buy" else D(-1)
                             gross_pnl=(fill_price-D(str(existing_raw[2])))*close_qty*direction
                             entry_fee=D(str(existing_raw[3]))*(close_qty/entry_qty) if entry_qty else D(0)
                             entry_funding=D(str(existing_raw[4]))*(close_qty/entry_qty) if entry_qty else D(0)
