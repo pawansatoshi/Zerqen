@@ -172,7 +172,7 @@ def indicators(rows):
     highs = [D(str(r[2])) for r in rows]
     lows = [D(str(r[3])) for r in rows]
     ema9, ema21 = [], []
-    k9, k21 = D("0.2"), D("2") / D("22")
+    k9, k21 = D("0.2"), D(2) / D(22)
     for i, x in enumerate(closes):
         ema9.append(x if i == 0 else x * k9 + ema9[-1] * (1-k9))
         ema21.append(x if i == 0 else x * k21 + ema21[-1] * (1-k21))
@@ -180,13 +180,13 @@ def indicators(rows):
     for i, x in enumerate(closes):
         prev = closes[i-1] if i else x
         trs.append(max(highs[i]-lows[i], abs(highs[i]-prev), abs(lows[i]-prev)))
-    atr = sum(trs[-14:]) / D("14") if len(trs) >= 14 else D("0")
-    rsi = D("50")
+    atr = sum(trs[-14:]) / D(14) if len(trs) >= 14 else D(0)
+    rsi = D(50)
     if len(closes) >= 15:
-        gains = [max(closes[i]-closes[i-1], D("0")) for i in range(len(closes)-14, len(closes))]
-        losses = [max(closes[i-1]-closes[i], D("0")) for i in range(len(closes)-14, len(closes))]
-        avg_gain, avg_loss = sum(gains)/D("14"), sum(losses)/D("14")
-        rsi = D("100") if avg_loss == 0 else D("100") - D("100")/(D("1") + avg_gain/avg_loss)
+        gains = [max(closes[i]-closes[i-1], D(0)) for i in range(len(closes)-14, len(closes))]
+        losses = [max(closes[i-1]-closes[i], D(0)) for i in range(len(closes)-14, len(closes))]
+        avg_gain, avg_loss = sum(gains)/D(14), sum(losses)/D(14)
+        rsi = D(100) if avg_loss == 0 else D(100) - D(100)/(D(1) + avg_gain/avg_loss)
     return closes, ema9, ema21, atr, rsi
 
 
@@ -195,8 +195,8 @@ def equity(conn, prices):
     if not state:
         return None
     cash = D(str(state[2]))
-    unrealized = D("0")
-    gross = D("0")
+    unrealized = D(0)
+    gross = D(0)
     for p in fetch_positions(conn):
         mark = prices.get(p.symbol)
         if mark:
@@ -204,11 +204,11 @@ def equity(conn, prices):
             gross += abs(mark * p.quantity)
     market_value = sum(
         (prices[p.symbol] * p.signed_quantity for p in fetch_positions(conn) if p.symbol in prices),
-        D("0"),
+        D(0),
     )
     eq = cash + market_value
     peak = D(str(state[7]))
-    dd = D("0") if peak <= 0 else max(D("0"), (peak-eq)/peak)
+    dd = D(0) if peak <= 0 else max(D(0), (peak-eq)/peak)
     day_start = D(str(state[8]))
     daily = eq-day_start
     return eq, unrealized, gross, dd, daily
@@ -246,9 +246,9 @@ def status_payload(conn):
         pass
     values = equity(conn, prices) if prices else None
     eq = values[0] if values else D(str(state[2]))
-    unrealized = values[1] if values else D("0")
-    gross = values[2] if values else D("0")
-    dd = values[3] if values else D("0")
+    unrealized = values[1] if values else D(0)
+    gross = values[2] if values else D(0)
+    dd = values[3] if values else D(0)
     daily = values[4] if values else D(str(state[2]))-D(str(state[8]))
     positions = conn.execute(
         "SELECT symbol,side,quantity,average_entry,fees,funding,realized_pnl FROM zerqen_paper_positions WHERE account_id='default' AND quantity > 0 ORDER BY symbol"
@@ -358,7 +358,7 @@ class handler(BaseHTTPRequestHandler):
                         if not price: continue
                         side="sell" if p.side=="buy" else "buy"
                         fee=price*p.quantity*D("0.001")
-                        _, realized=apply_fill(p,side,p.quantity,price,fee,D("0"))
+                        _, realized=apply_fill(p,side,p.quantity,price,fee,D(0))
                         conn.execute("DELETE FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s",(p.symbol,))
                         conn.execute("UPDATE zerqen_paper_state SET cash=cash+%s,realized_pnl=realized_pnl+%s,fees=fees+%s,updated_at=%s WHERE account_id='default'",(realized,realized,fee,now()))
                     conn.execute("UPDATE zerqen_paper_state SET flatten_requested=FALSE WHERE account_id='default'")
@@ -374,8 +374,8 @@ class handler(BaseHTTPRequestHandler):
                     prices=fetch_prices(["BTC/USDT","ETH/USDT","SOL/USDT","BNB/USDT"])
                     for symbol in prices:
                         rows=fetch_candles(symbol)
-                        closes,e9,e21,atr,rsi=indicators(rows)
-                        signal = e9[-1] > e21[-1] and e9[-2] <= e21[-2] and D("50") <= rsi <= D("75")
+                        _,e9,e21,atr,rsi=indicators(rows)
+                        signal = e9[-1] > e21[-1] and e9[-2] <= e21[-2] and D(50) <= rsi <= D(75)
                         event(conn,"STRATEGY_DECISION",{"symbol":symbol,"strategy":"baseline_trend","regime":"trend_up" if e9[-1]>e21[-1] else "range","signal":signal,"status":"VALIDATED" if eligible_strategies("trend_up" if e9[-1]>e21[-1] else "range") else "INSUFFICIENT_DATA","reason":"no runtime paper order is authorized until a strategy has persisted OOS/walk-forward/Monte Carlo evidence"})
                     snapshot(conn,prices)
                     conn.commit()
@@ -403,7 +403,7 @@ class handler(BaseHTTPRequestHandler):
                     limits=PaperLimits()
                     if qty*price > eq*limits.max_strategy_allocation:
                         return send(self,409,{"ok":False,"error":"strategy allocation cap exceeded"})
-                    allowed,reason=check_portfolio_risk(eq,positions,proposed_risk,limits,state_values[4] if state_values else D("0"),D(str(state[7])),proposed_notional=qty*price)
+                    allowed,reason=check_portfolio_risk(eq,positions,proposed_risk,limits,state_values[4] if state_values else D(0),D(str(state[7])),proposed_notional=qty*price)
                     if not allowed: return send(self,409,{"ok":False,"error":reason})
                     oid="paper-"+uuid.uuid4().hex
                     t=now()
@@ -414,10 +414,10 @@ class handler(BaseHTTPRequestHandler):
                     conn.execute("UPDATE zerqen_paper_orders SET status='SUBMITTED',updated_at=%s WHERE client_order_id=%s",(now(),oid))
                     conn.execute("UPDATE zerqen_paper_orders SET status='ACKNOWLEDGED',updated_at=%s WHERE client_order_id=%s",(now(),oid))
                     conn.execute("INSERT INTO zerqen_paper_fills(fill_id,client_order_id,account_id,symbol,side,quantity,price,fee,funding,slippage,created_at) VALUES(%s,%s,'default',%s,%s,%s,%s,%s,0,%s,%s)",(str(uuid.uuid4()),oid,symbol,side,qty,fill_price,fee,slip*qty,t))
-                    realized=D("0")
+                    realized=D(0)
                     existing=next((p for p in positions if p.symbol==symbol),None)
                     if existing:
-                        newpos,realized=apply_fill(existing,side,qty,fill_price,fee,D("0"))
+                        newpos,realized=apply_fill(existing,side,qty,fill_price,fee,D(0))
                         if newpos:
                             conn.execute("UPDATE zerqen_paper_positions SET side=%s,quantity=%s,average_entry=%s,fees=fees+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default' AND symbol=%s",(newpos.side,newpos.quantity,newpos.average_entry,fee,realized,now(),symbol))
                         else:
@@ -433,7 +433,7 @@ class handler(BaseHTTPRequestHandler):
                     return send(self,200,status_payload(conn))
 
                 return send(self,400,{"ok":False,"error":"unsupported action"})
-        except Exception:
+        except Exception:  # noqa: BLE001
             return send(self,502,{"ok":False,"error":"paper operation temporarily unavailable"})
 
     def log_message(self, format, *args):
