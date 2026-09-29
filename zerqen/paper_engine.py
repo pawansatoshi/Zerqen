@@ -139,17 +139,34 @@ def apply_fill(
 
     closing = min(abs(current), quantity)
     direction = D("1") if current > 0 else D("-1")
-    realized = (price - position.average_entry) * closing * direction - fee - funding
+    original_qty = abs(current)
+    entry_fee_alloc = position.fees * closing / original_qty
+    entry_funding_alloc = position.funding * closing / original_qty
+    realized = (
+        (price - position.average_entry) * closing * direction
+        - entry_fee_alloc
+        - entry_funding_alloc
+        - fee
+        - funding
+    )
     remaining = quantity - closing
     position.realized_pnl += realized
-    position.fees += fee
-    position.funding += funding
+    position.fees = position.fees - entry_fee_alloc + fee
+    position.funding = position.funding - entry_funding_alloc + funding
     if remaining == 0:
-        if closing == abs(current):
+        if closing == original_qty:
             return None, realized
         return position, realized
     new_side = "buy" if signed > 0 else "sell"
-    return Position(position.symbol, new_side, remaining, price, fee, funding, D("0")), realized
+    return Position(
+        position.symbol,
+        new_side,
+        remaining,
+        price,
+        fee,
+        funding,
+        D("0"),
+    ), realized
 
 
 def net_realized_pnl(gross_pnl: Decimal, fees: Decimal, funding: Decimal, slippage: Decimal) -> Decimal:
