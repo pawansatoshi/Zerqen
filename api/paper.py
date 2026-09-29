@@ -202,7 +202,11 @@ def equity(conn, prices):
         if mark:
             unrealized += (mark - p.average_entry) * p.signed_quantity
             gross += abs(mark * p.quantity)
-    eq = cash + unrealized
+    market_value = sum(
+        (prices[p.symbol] * p.signed_quantity for p in fetch_positions(conn) if p.symbol in prices),
+        D("0"),
+    )
+    eq = cash + market_value
     peak = D(str(state[7]))
     dd = D("0") if peak <= 0 else max(D("0"), (peak-eq)/peak)
     day_start = D(str(state[8]))
@@ -421,7 +425,8 @@ class handler(BaseHTTPRequestHandler):
                                         conn.execute("INSERT INTO zerqen_paper_positions(account_id,symbol,side,quantity,average_entry,fees,funding,realized_pnl,updated_at) VALUES('default',%s,%s,%s,%s,%s,0,0,%s)",(symbol,side,qty,fill_price,fee,now()))
                         realized=D("0")
                     conn.execute("UPDATE zerqen_paper_orders SET status='FILLED',filled_quantity=%s,average_price=%s,updated_at=%s WHERE client_order_id=%s",(qty,fill_price,now(),oid))
-                    conn.execute("UPDATE zerqen_paper_state SET fees=fees+%s,slippage=slippage+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default'",(fee,slip*qty,realized,now()))
+                    cash_delta = (-fill_price * qty - fee) if side == "buy" else (fill_price * qty - fee)
+                    conn.execute("UPDATE zerqen_paper_state SET cash=cash+%s,fees=fees+%s,slippage=slippage+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default'",(cash_delta,fee,slip*qty,realized,now()))
                     event(conn,"PAPER_ORDER_FILLED",{"client_order_id":oid,"symbol":symbol,"side":side,"quantity":str(qty),"price":str(fill_price),"fee":str(fee),"slippage":str(slip*qty)})
                     snapshot(conn,prices)
                     conn.commit()
