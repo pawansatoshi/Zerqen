@@ -99,7 +99,8 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
   </div>
   <div class="section"><div class="section-head"><div><h2>Control</h2><p>Starting capital is explicit; no financial value is invented.</p></div></div>
     <div class="card small-card"><div class="form">
-      <label>Paper market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px"><select id="paperExchange"></select><input id="paperSymbol" value="BTC/USDT" placeholder="BTC/USDT"><select id="paperTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select></div>
+      <label>Paper market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px"><select id="paperMarketType"><option value="spot">SPOT</option><option value="futures" disabled>FUTURES · LOCKED</option></select><select id="paperExchange"></select><input id="paperSymbol" value="BTC/USDT" placeholder="BTC/USDT"><select id="paperTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select></div>
+      <div class="section-note">Spot is the only enabled execution market. Futures remains locked. Stops are adaptive to ATR + market structure, capped at 8% distance, with fixed fractional risk.</div>
       <label>Demo currency</label><select id="paperCurrency"><option value="USD">USD · $</option><option value="INR">INR · ₹</option></select>
       <label>Paper starting capital</label><input id="paperCapital" type="number" min="1" step="0.01" placeholder="Enter starting capital">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -364,11 +365,11 @@ function selectExecutionMode(mode){
   }
 }
 async function paperApi(action,extra={}){return api("/api/paper",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action},extra))})}
-function paperConfig(){return {exchange_id:$("paperExchange").value,symbol:$("paperSymbol").value.trim().toUpperCase(),timeframe:$("paperTimeframe").value}}
+function paperConfig(){return {market_type:$("paperMarketType")?.value||"spot",exchange_id:$("paperExchange").value,symbol:$("paperSymbol").value.trim().toUpperCase(),timeframe:$("paperTimeframe").value}}
 function renderPaper(d){window.lastPaperData=d;
   if(!d||!d.initialized){$("paperMode").textContent="PAPER · NOT INITIALIZED";$("paperMessage").textContent=d?.error||"Set an explicit starting capital to begin.";return}
   $("paperEquity").textContent=displayMoney(d.equity);$("paperCash").textContent=displayMoney(d.cash);$("paperRealized").textContent=(d.realized_pnl>=0?"+":"")+fmt(d.realized_pnl);$("paperUnrealized").textContent=(d.unrealized_pnl>=0?"+":"")+fmt(d.unrealized_pnl);$("paperDD").textContent=fmt(d.drawdown*100,2)+"%";
-  $("paperDaily").textContent=fmt((d.daily_pnl/Math.max(d.equity,0.0000001))*100,2)+"%";$("paperExposure").textContent=fmt(d.gross_exposure/Math.max(d.equity,0.0000001),2)+"x";
+  $("paperDaily").textContent=fmt((d.daily_pnl/Math.max(d.equity,0.0000001))*100,2)+"%";$("paperMessage").textContent=d.daily_target_hit?"DAILY +8% TARGET HIT · new entries locked until next trading day":"Daily target: "+displayMoney(d.daily_target||0)+" · target is a portfolio hurdle, not a forced trade";$("paperExposure").textContent=fmt(d.gross_exposure/Math.max(d.equity,0.0000001),2)+"x";
   $("paperSafety").textContent=d.halted?"HALTED":(d.paused?"PAUSED":"ARMED");$("paperHaltState").textContent=d.halted?"HALT NEW ORDERS ACTIVE":(d.paused?"PAPER SESSION PAUSED":"Paper execution ready");$("paperMode").textContent="PAPER · LIVE CAPITAL OFF";
   $("paperMessage").textContent="research hurdle 8.00% — not a trading requirement";
   $("paperPositions").innerHTML=d.positions.length?d.positions.map(p=>"<tr><td>"+p.symbol+"</td><td>"+p.side.toUpperCase()+"</td><td>"+fmt(p.quantity,6)+"</td><td>"+displayMoney(p.average_entry)+"</td><td>"+displayMoney(p.fees)+"</td><td>"+fmt(p.realized_pnl,4)+"</td></tr>").join(""):"<tr><td colspan='6' class='empty'>No paper positions.</td></tr>";
