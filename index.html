@@ -438,7 +438,7 @@ async function paperCycle(){
       const er=await paperApi("test_order",{symbol:d.symbol,side:decision.payload?.signal==="SELL"?"sell":"buy"});
       const ed=await er.json();
       renderPaper(ed);
-      if(ed.ok) $("paperMessage").textContent="DEMO execution filled from approved strategy signal";
+      if(ed.ok){ $("paperMessage").textContent="DEMO execution filled from approved strategy signal"; playAlert(decision.payload?.signal==="SELL"?"SELL":"BUY"); }
     }
   }
   await loadLedger();
@@ -446,11 +446,11 @@ async function paperCycle(){
 }
 function paperToggleAuto(){
   if(autoDemoTimer){clearInterval(autoDemoTimer);autoDemoTimer=null;$("autoDemoBtn").textContent="Start automatic demo";toast("Automatic demo stopped");return}
-  if(!$("paperCapital").value && !$("paperEquity").textContent.includes("$")){toast("Initialize demo first");return}
-  paperCycle();
-  autoDemoTimer=setInterval(paperCycle,30000);
+  if(!$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
+  scanTop50();
+  autoDemoTimer=setInterval(scanTop50,60000);
   $("autoDemoBtn").textContent="Stop automatic demo";
-  toast("Automatic demo started · 30s market evaluation");
+  toast("Automatic demo started · top-50 scan every 60s");
 }
 async function paperTestOrder(){const r=await paperApi("test_order",{symbol:$("paperSymbol").value.trim().toUpperCase(),side:"buy"});const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
 async function paperPause(){const r=await paperApi("pause");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session paused":"Pause failed")}
@@ -520,7 +520,7 @@ async function openTradeDetail(id){
 }
 function closeTradeDetail(){$("tradeDrawer").classList.remove("open")}
 async function exportLedger(format){if(!token()){toast("Dashboard token required");return}try{const res=await api("/api/ledger/export?format="+format+"&"+ledgerParams().toString(),{cache:"no-store"});if(!res.ok){const d=await res.json();toast(d.error||"Export failed");return}const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=format==="xlsx"?"zerqen-trade-ledger.xlsx":"zerqen-trade-ledger.csv";a.click();URL.revokeObjectURL(url);toast("Authoritative ledger exported")}catch(_){toast("Export failed")}}
-selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
+selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
 setInterval(loadMarket,30000);
 setInterval(loadHealth,30000);setInterval(loadPaper,15000);
