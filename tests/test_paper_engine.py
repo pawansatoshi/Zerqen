@@ -93,7 +93,7 @@ def test_structural_stop_is_used_and_capped():
 
 def test_stop_over_eight_percent_is_rejected():
     limits = PaperLimits()
-    result = size_for_risk(D(10000), D(100), D(5), limits)
+    result = size_for_risk(D(10000), D(100), D(6), limits)
     assert not result.allowed
     assert "capital-protection" in result.reason
 
