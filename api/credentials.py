@@ -1,4 +1,3 @@
-import base64
 import hashlib
 import json
 import os
@@ -76,8 +75,8 @@ class handler(BaseHTTPRequestHandler):
                     for r in rows
                 ],
             })
-        except Exception as exc:
-            return send(self, 500, {"ok": False, "error": type(exc).__name__ + ": " + str(exc)})
+        except Exception:
+            return send(self, 500, {"ok": False, "error": "credential service unavailable"})
 
     def do_POST(self):
         if not auth_ok(self):
