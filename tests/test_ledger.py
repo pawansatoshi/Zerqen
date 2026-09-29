@@ -38,8 +38,9 @@ def test_ledger_filters_are_server_side_and_scoped():
 def test_trade_dict_serializes_decimal_and_timestamps():
     ts = datetime(2026, 9, 29, tzinfo=timezone.utc)
     row = (
-        "trade-1", "signal-1", "entry-1", "exit-1", "fill-1", "fill-2",
-        "okx", "BTC/USDT", "1h", "buy", "PAPER_TEST_HARNESS", "trend_up",
+        "trade-1", "decision-1", "position-1", 1, "audit-1", "signal-1",
+        "entry-1", "exit-1", "fill-1", "fill-2", "okx", "BTC/USDT", "1h",
+        "buy", "PAPER_TEST_HARNESS", "trend_up",
         ts, ts, ts,
         Decimal(100), Decimal(110), Decimal(1), Decimal(97), Decimal(106),
         Decimal(5), Decimal(10), Decimal("0.2"), Decimal("0.1"), Decimal(0),
