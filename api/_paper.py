@@ -433,8 +433,11 @@ class handler(BaseHTTPRequestHandler):
                     if bool(state[9]):
                         return send(self,409,{"ok":False,"error":"HALT NEW ORDERS is active"})
                     exchange_id=str(state[12])
-                    symbol=str(state[13])
+                    symbol=str(data.get("symbol_override", state[13])).strip().upper()
                     timeframe=str(state[14])
+                    if symbol != str(state[13]):
+                        conn.execute("UPDATE zerqen_paper_state SET symbol=%s,updated_at=%s WHERE account_id='default'",(symbol,now()))
+                        state=get_state(conn)
                     prices=fetch_prices(exchange_id,[symbol],timeframe)
                     for symbol in prices:
                         rows=fetch_candles(exchange_id,symbol,timeframe)
@@ -481,8 +484,6 @@ class handler(BaseHTTPRequestHandler):
                     side=str(data.get("side","buy")).lower()
                     exchange_id=str(state[12])
                     timeframe=str(state[14])
-                    if symbol != str(state[13]):
-                        return send(self,400,{"ok":False,"error":"paper session symbol is fixed; reset and initialize with the desired symbol"})
                     if side not in {"buy","sell"}:
                         return send(self,400,{"ok":False,"error":"side must be buy or sell"})
                     if bool(state[11]):
