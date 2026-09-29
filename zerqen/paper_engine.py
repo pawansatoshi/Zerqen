@@ -79,6 +79,7 @@ def check_portfolio_risk(
     limits: PaperLimits,
     daily_pnl: Decimal,
     peak_equity: Decimal,
+    proposed_notional: Decimal | None = None,
 ) -> tuple[bool, str]:
     if equity <= 0:
         return False, "non-positive equity"
@@ -89,10 +90,8 @@ def check_portfolio_risk(
     if open_risk + proposed.risk_amount > equity * limits.aggregate_open_risk:
         return False, "aggregate open risk exceeded"
     gross = sum((abs(p.quantity * p.average_entry) for p in positions), D("0"))
-    if gross + proposed.quantity * proposed.risk_amount / max(proposed.risk_amount, D("1")) * D("0") > equity * limits.max_gross_exposure:
-        # Gross exposure is checked by the caller with actual notional; this branch only
-        # protects against malformed proposed risk objects.
-        pass
+    if proposed_notional is not None and gross + proposed_notional > equity * limits.max_gross_exposure:
+        return False, "gross exposure cap exceeded"
     if daily_pnl <= -(equity * limits.daily_loss):
         return False, "daily loss breaker active"
     if peak_equity > 0 and (peak_equity - equity) / peak_equity >= limits.max_drawdown:
