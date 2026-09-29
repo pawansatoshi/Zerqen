@@ -172,3 +172,10 @@ def apply_fill(
 
 def net_realized_pnl(gross_pnl: Decimal, fees: Decimal, funding: Decimal, slippage: Decimal) -> Decimal:
     return gross_pnl - fees - funding - slippage
+
+
+def compounding_equity(starting_equity: Decimal, realized_net_pnl: Decimal) -> Decimal:
+    """Return the capital base used for compounding; unrealized P&L is excluded."""
+    if starting_equity < 0:
+        raise ValueError("starting equity cannot be negative")
+    return starting_equity + realized_net_pnl
