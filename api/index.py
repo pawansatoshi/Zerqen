@@ -302,6 +302,7 @@ def scanner(
             atr_pct=(sum(tr[-14:])/max(len(tr[-14:]),1))/closes[-1]
             max_bar_pct=max(((highs[i]-lows[i])/closes[i] for i in range(max(1,len(closes)-20),len(closes))),default=0)
             volatility_ok=atr_pct<=0.05 and max_bar_pct<=0.08
+            liquidity_ok=True
             momentum=(closes[-1]/closes[-6]-1)*100
             avgvol=sum(vols[-21:-1])/max(len(vols[-21:-1]),1); volratio=vols[-1]/avgvol if avgvol else 0
             trend=1 if e9[-1]>e21[-1] else -1
@@ -311,7 +312,7 @@ def scanner(
             volume_score=min(25,max(0,(volratio-0.5)*25))
             score=round(min(100,trend_score+momentum_score+rsi_score+volume_score),1)
             side="BUY" if trend>0 and 50<=rsi<=72 and momentum>0 else ("SELL" if trend<0 and 28<=rsi<=50 and momentum<0 else "WATCH")
-            if not volatility_ok: side="WATCH"
+            if not volatility_ok or not liquidity_ok: side="WATCH"
             return {"symbol":symbol.replace("USDT","/USDT"),"price":closes[-1],"change24h":float(t.get("priceChangePercent") or 0),"volume24h":float(t.get("quoteVolume") or 0),"rsi":round(rsi,1),"emaTrend":"BULLISH" if trend>0 else "BEARISH","momentum":round(momentum,2),"volumeRatio":round(volratio,2),"score":score,"side":side,"volatilityOk":volatility_ok,"atrPct":round(atr_pct*100,2),"maxBarPct":round(max_bar_pct*100,2),"riskReward":2.0}
         results=[]
         with ThreadPoolExecutor(max_workers=12) as pool:
