@@ -9,7 +9,7 @@ from decimal import Decimal as D
 from http.server import BaseHTTPRequestHandler
 from datetime import datetime, timezone
 
-from zerqen.paper_engine import (PaperLimits, Position, apply_fill, check_portfolio_risk, compounding_equity, size_for_risk, volatility_profile, classify_regime, dynamic_structural_stop)
+from zerqen.paper_engine import (PaperLimits, Position, apply_fill, check_portfolio_risk, size_for_risk, volatility_profile, classify_regime, dynamic_structural_stop)
 from zerqen.strategy_registry import eligible_strategies
 
 
@@ -628,7 +628,7 @@ class handler(BaseHTTPRequestHandler):
                         return send(self,409,{"ok":False,"error":"volatility protection rejected this asset"})
                     regime=classify_regime([D(str(r[4])) for r in rows],e9,e21,rsi)
                     if scanner_requested:
-                        direction_ok=(side=="buy" and regime=="trend_up" and rsi>=D("50")) or (side=="sell" and regime=="trend_down" and rsi<=D("50"))
+                        direction_ok=(side=="buy" and regime=="trend_up" and rsi>=D(50)) or (side=="sell" and regime=="trend_down" and rsi<=D(50))
                         if not direction_ok:
                             return send(self,409,{"ok":False,"error":"scanner signal failed server-side direction revalidation"})
                     structural_stop=dynamic_structural_stop(rows,side,price,atr)
