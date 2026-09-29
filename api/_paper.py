@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Demo execution path: real exchange market data, simulated fills, zero live capital.
+
 import json
 import os
 import uuid
