@@ -257,9 +257,17 @@ function connectMarketSocket(){
   }catch(_){setMarketStatus("STALE",lastTickAt)}
 }
 async function loadHealth(){
-  try{const r=await fetch("/api/health",{cache:"no-store"}),d=await r.json();$("healthApi").textContent=d.ok?"READY":"ERROR"}catch(_){$("healthApi").textContent="OFFLINE"}
+  try{
+    const r=await fetch("/api/health",{cache:"no-store"}),d=await r.json();
+    $("healthApi").textContent=d.ok?"READY":"ERROR";
+    $("healthDb").textContent=d.configuration?.database_status||"UNKNOWN";
+    $("healthPaper").textContent=d.configuration?.database_status==="CONNECTED"?"READY":"BLOCKED";
+    $("healthMarket").textContent="PUBLIC";
+  }catch(_){
+    $("healthApi").textContent="OFFLINE";$("healthDb").textContent="UNKNOWN";$("healthPaper").textContent="BLOCKED";
+  }
 }
-async async function loadMarket(){
+async function loadMarket(){
   const tf=currentTimeframe;
   try{
     const res=await fetch("/api/market?exchange=okx&symbol=BTC%2FUSDT&timeframe="+encodeURIComponent(tf)+"&limit=120",{cache:"no-store"});
