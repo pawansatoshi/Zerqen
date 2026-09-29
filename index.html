@@ -524,7 +524,7 @@ async function paperCycle(){
   await loadLedger();
   if(!d.ok && d.error) $("paperMessage").textContent=d.error;
 }
-async function paperToggleAuto(){
+async async function paperToggleAuto(){
   const action=autoDemoTimer?"stop":"start";
   if(action==="start" && !$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
   try{
@@ -543,6 +543,7 @@ async function paperToggleAuto(){
     }
   }catch(e){toast(e.message||"worker control failed")}
 }
+
 async function refreshAIStatus(){
   try{
     const r=await api("/api/ai/status",{cache:"no-store"});
