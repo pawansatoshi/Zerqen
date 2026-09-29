@@ -29,7 +29,7 @@ class FreeModelRegistry:
     @staticmethod
     def _price(value: Any):
         try:
-            return Decimal(str(value))
+            return Decimal(value)
         except Exception:
             return None
 
@@ -117,7 +117,7 @@ def evaluate_setup(context):
         try:
             response = _http_json('POST', OPENROUTER_BASE + '/chat/completions', {'model':model.model_id,'messages':[{'role':'system','content':system},{'role':'user','content':user}],'temperature':0,'max_tokens':300})
             cost = (response.get('usage') or {}).get('cost')
-            if cost is not None and Decimal(str(cost)) != 0:
+            if cost is not None and Decimal(cost) != 0:
                 raise FreeOnlyViolation(f'non-zero inference cost from {model.model_id}')
             parsed = _parse_decision(_extract_text(response)); attempts.append({'model':model.model_id,'ok':True})
             return {'enabled':True,**parsed,'model':model.model_id,'attempts':attempts}
