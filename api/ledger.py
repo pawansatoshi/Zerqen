@@ -173,9 +173,10 @@ def _rows(conn, sql, vals):
 
 def _daily(conn, date_from=None, date_to=None):
     rows=conn.execute("""
-        SELECT created_at::date AS day, MIN(equity) FILTER (WHERE true) AS first_equity,
-               MAX(equity) AS last_equity, MAX(drawdown) AS drawdown,
-               MAX(daily_pnl) AS daily_pnl
+        SELECT created_at::date AS day,
+               (array_agg(equity ORDER BY created_at ASC))[1] AS first_equity,
+               (array_agg(equity ORDER BY created_at DESC))[1] AS last_equity,
+               MAX(drawdown) AS drawdown, MAX(daily_pnl) AS daily_pnl
         FROM zerqen_paper_equity_snapshots
         WHERE account_id='default' AND (%s IS NULL OR created_at::date >= %s)
           AND (%s IS NULL OR created_at::date < %s)
