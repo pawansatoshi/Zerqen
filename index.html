@@ -74,7 +74,11 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
 </section>
 
 <section id="paper" class="view">
-  <div class="section-head"><div><h2>Paper Demo Control Center</h2><p>Real public market data · simulated execution · durable server-side state</p></div><div><span class="badge">LIVE CAPITAL OFF</span></div></div>
+  <div class="section-head"><div><h2>Execution Control Center</h2><p>Choose the execution mode. Demo is available now; real-money execution stays locked until explicitly enabled.</p></div><div style="display:flex;gap:7px"><span class="badge">DEMO READY</span><span class="badge">REAL LOCKED</span></div></div>
+  <div class="card small-card" style="margin-bottom:16px"><div class="small-title">Execution mode</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+    <button id="demoModeBtn" class="primary" onclick="selectExecutionMode('demo')">DEMO · PAPER</button>
+    <button id="realModeBtn" class="secondary" onclick="selectExecutionMode('real')">REAL · LOCKED</button>
+  </div><div id="executionModeMessage" class="note" style="margin-top:10px">Demo uses real exchange market data with simulated fills. No exchange order is submitted.</div></div>
   <div class="hero">
     <div class="card hero-card">
       <div class="eyebrow">Paper equity</div><div class="hero-value" id="paperEquity">—</div>
@@ -89,7 +93,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
     <div class="card status-card">
       <div><div class="status-head"><span class="eyebrow">Safety state</span><span class="live"><i class="dot"></i><span id="paperSafety">READY</span></span></div>
       <div class="engine" id="paperHaltState">Paper execution</div>
-      <div class="sub">8% research hurdle is informational only. Automatic strategy execution is blocked until validation evidence is persisted.</div></div>
+      <div class="sub">8% is a research hurdle only. Demo can run continuously against real market data with simulated fills. Real execution remains locked.</div></div>
       <div><div class="riskrow"><span>Open risk</span><span id="paperRisk">0.00%</span></div><div class="riskrow"><span>Daily loss</span><span id="paperDaily">0.00%</span></div><div class="riskrow"><span>Exposure</span><span id="paperExposure">0.00x</span></div></div>
     </div>
   </div>
@@ -98,11 +102,12 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
       <label>Paper market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px"><select id="paperExchange"></select><input id="paperSymbol" value="BTC/USDT" placeholder="BTC/USDT"><select id="paperTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select></div>
       <label>Paper starting capital</label><input id="paperCapital" type="number" min="1" step="0.01" placeholder="Enter starting capital">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="primary" onclick="paperInitialize()">Start paper session</button>
-        <button class="secondary" onclick="paperResume()">Resume paper</button>
-        <button class="secondary" onclick="paperPause()">Pause paper</button>
-        <button class="secondary" onclick="paperCycle()">Run market cycle</button>
-        <button class="secondary" onclick="paperTestOrder()">Run explicit execution test</button>
+        <button class="primary" onclick="paperInitialize()">Start demo session</button>
+        <button class="secondary" id="autoDemoBtn" onclick="paperToggleAuto()">Start automatic demo</button>
+        <button class="secondary" onclick="paperResume()">Resume demo</button>
+        <button class="secondary" onclick="paperPause()">Pause demo</button>
+        <button class="secondary" onclick="paperCycle()">Run one market cycle</button>
+        <button class="secondary" onclick="paperTestOrder()">Run execution test</button>
         <button class="secondary" onclick="paperHalt()">Halt new orders</button>
         <button class="secondary" onclick="paperFlatten()">Flatten paper positions</button><button class="secondary" onclick="paperReset()">Reset paper account</button>
       </div>
@@ -275,6 +280,7 @@ function setMarketStatus(state,age){
   const hm=$("healthMarket");if(hm)hm.textContent=state;
 }
 let marketWs=null,marketWsRetry=null,lastTickAt=0,currentTimeframe="1h",activeExchange=null;
+let executionMode="demo", autoDemoTimer=null;
 function connectMarketSocket(){
   try{if(marketWs)marketWs.close();marketWs=new WebSocket("wss://stream.binance.com:9443/ws/btcusdt@ticker");
     marketWs.onopen=()=>{setMarketStatus("LIVE",lastTickAt||Date.now());if(marketWsRetry){clearTimeout(marketWsRetry);marketWsRetry=null}};
@@ -331,6 +337,19 @@ document.querySelectorAll("[data-tf]").forEach(b=>b.addEventListener("click",()=
 document.querySelectorAll(".period").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".period").forEach(x=>x.classList.remove("active"));b.classList.add("active");toast("Verified portfolio history will populate this period")}));
 async function refreshAll(){toast("Refreshing live data…");await Promise.all([loadMarket(),loadHealth(),loadConnections()]);lastRefresh=Date.now();toast("Dashboard refreshed")}
 
+function selectExecutionMode(mode){
+  executionMode=mode;
+  const demo=mode==="demo";
+  $("demoModeBtn").className=demo?"primary":"secondary";
+  $("realModeBtn").className=demo?"secondary":"primary";
+  if(!demo){
+    $("realModeBtn").textContent="REAL · LOCKED";
+    $("executionModeMessage").textContent="Real-money execution is intentionally locked. It will require an explicit production authorization step later. No real order can be submitted from this mode.";
+    toast("Real mode is locked — demo only");
+  }else{
+    $("executionModeMessage").textContent="Demo uses real exchange market data with simulated fills. No exchange order is submitted.";
+  }
+}
 async function paperApi(action,extra={}){return api("/api/paper",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action},extra))})}
 function paperConfig(){return {exchange_id:$("paperExchange").value,symbol:$("paperSymbol").value.trim().toUpperCase(),timeframe:$("paperTimeframe").value}}
 function renderPaper(d){
@@ -345,7 +364,19 @@ function renderPaper(d){
 }
 async function loadPaper(){if(!token()){return}try{const r=await api("/api/paper",{cache:"no-store"});const d=await r.json();renderPaper(d)}catch(_){$("paperMessage").textContent="Paper state unavailable"}}
 async function paperInitialize(){const capital=$("paperCapital").value;if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Paper account initialized":"Initialization failed")}
-async function paperCycle(){const r=await paperApi("cycle");const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Real market cycle evaluated":"Paper cycle failed")}
+async function paperCycle(){
+  if(executionMode!=="demo"){toast("Real mode is locked");return}
+  const r=await paperApi("cycle");const d=await r.json();renderPaper(d);await loadLedger();
+  if(!d.ok && d.error) $("paperMessage").textContent=d.error;
+}
+function paperToggleAuto(){
+  if(autoDemoTimer){clearInterval(autoDemoTimer);autoDemoTimer=null;$("autoDemoBtn").textContent="Start automatic demo";toast("Automatic demo stopped");return}
+  if(!$("paperCapital").value && !$("paperEquity").textContent.includes("$")){toast("Initialize demo first");return}
+  paperCycle();
+  autoDemoTimer=setInterval(paperCycle,30000);
+  $("autoDemoBtn").textContent="Stop automatic demo";
+  toast("Automatic demo started · 30s market evaluation");
+}
 async function paperTestOrder(){const r=await paperApi("test_order",{symbol:$("paperSymbol").value.trim().toUpperCase(),side:"buy"});const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
 async function paperPause(){const r=await paperApi("pause");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session paused":"Pause failed")}
 async function paperResume(){const r=await paperApi("resume");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session resumed":"Resume failed")}
@@ -414,7 +445,7 @@ async function openTradeDetail(id){
 }
 function closeTradeDetail(){$("tradeDrawer").classList.remove("open")}
 async function exportLedger(format){if(!token()){toast("Dashboard token required");return}try{const res=await api("/api/ledger/export?format="+format+"&"+ledgerParams().toString(),{cache:"no-store"});if(!res.ok){const d=await res.json();toast(d.error||"Export failed");return}const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=format==="xlsx"?"zerqen-trade-ledger.xlsx":"zerqen-trade-ledger.csv";a.click();URL.revokeObjectURL(url);toast("Authoritative ledger exported")}catch(_){toast("Export failed")}}
-fillLedgerExchanges();fillExchanges();fillPaperExchanges();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
+selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
 setInterval(loadMarket,30000);
 setInterval(loadHealth,30000);setInterval(loadPaper,15000);
