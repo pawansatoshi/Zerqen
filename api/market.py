@@ -251,6 +251,7 @@ def public_market_probe(exchange_id, symbol, timeframe, limit):
                 "ticker": False,
                 "ohlcv": False,
                 "error_type": type(exc).__name__,
+                "error_http_status": getattr(exc, "code", None),
                 "error_stage": "public_api",
             }
 
@@ -397,6 +398,7 @@ def public_market_probe(exchange_id, symbol, timeframe, limit):
             "ticker": stage == "fetch_ohlcv",
             "ohlcv": False,
             "error_type": error_type,
+            "error_http_status": getattr(exc, "http_status", None),
             "error_stage": stage,
         }
 
