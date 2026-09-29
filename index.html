@@ -519,7 +519,7 @@ async function paperToggleAuto(){
   const action=autoDemoTimer?"stop":"start";
   if(action==="start" && !$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
   try{
-    const r=await fetch("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
+    const r=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
     const d=await r.json();
     if(!d.ok) throw new Error(d.error||"worker control failed");
     if(action==="start"){
@@ -535,7 +535,7 @@ async function paperToggleAuto(){
   }catch(e){toast(e.message||"worker control failed")}
 }
 async function refreshPaperStatus(){
-  try{const r=await fetch("/api/paper");const d=await r.json();renderPaper(d);await loadLedger()}catch(e){}
+  try{const r=await api("/api/paper",{method:"GET"});const d=await r.json();renderPaper(d);await loadLedger()}catch(e){}
 }
 async function paperTestOrder(){const r=await paperApi("test_order",{symbol:$("paperSymbol").value.trim().toUpperCase(),side:"buy"});const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
 async function paperPause(){const r=await paperApi("pause");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session paused":"Pause failed")}
