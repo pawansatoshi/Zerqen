@@ -67,7 +67,7 @@ def bitget_signature(secret: str, timestamp: str, method: str, request_path: str
 
 def gate_signature(secret: str, method: str, path: str, query: str, body: str, timestamp: str) -> str:
     body_hash = hashlib.sha512(body.encode()).hexdigest()
-    message = "\n".join([method.upper(), path, query, body_hash, timestamp])
+    message = f"{method.upper()}\n{path}\n{query}\n{body_hash}\n{timestamp}"
     return hmac_sha512_hex(secret, message)
 
 def wazirx_signature(secret: str, params: dict[str, object]) -> str:
