@@ -230,7 +230,8 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
     <label>API secret</label><input id="secret" type="password" autocomplete="off">
     <label>Passphrase (when required)</label><input id="pass" type="password" autocomplete="off">
     <div class="note">Connection testing is read-only. No order is submitted by this screen. For live accounts, use keys with withdrawals disabled.</div>
-    <button class="primary" onclick="testConnection()">Test connection</button>
+    <button class="primary" onclick="saveDashboardToken()">Verify dashboard token</button>
+    <button class="secondary" onclick="testConnection()">Test exchange connection</button>
     <button class="secondary" onclick="saveConnection()">Save encrypted credential</button>
     <div id="result" class="sub"></div>
   </div>
@@ -252,6 +253,21 @@ function openModalFor(exchangeId){openModal();$("exchange").value=exchangeId}
 function fillExchanges(){const s=$("exchange");if(!s)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)))}
 function token(){return $("token")?.value||sessionStorage.getItem("zerqen_token")||""}
 async function api(path,options={}){const headers=Object.assign({},options.headers||{},{"x-zerqen-dashboard-token":token()});return fetch(path,Object.assign({},options,{headers}))}
+async function saveDashboardToken(){
+  const value=$("token").value.trim();
+  const r=$("result");
+  if(!value){r.textContent="Dashboard access token required";r.className="negative";return}
+  r.textContent="Verifying dashboard token…";
+  try{
+    const res=await fetch("/api/demo-worker",{headers:{"x-zerqen-dashboard-token":value}});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){r.textContent=d.error||"Dashboard token verification failed";r.className="negative";return}
+    sessionStorage.setItem("zerqen_token",value);
+    r.textContent="✓ Dashboard token verified · worker status: "+(d.enabled?"enabled":"disabled");
+    r.className="positive";
+    await loadPaper();
+  }catch(e){r.textContent="✕ network error";r.className="negative"}
+}
 async function testConnection(){
   const r=$("result");r.textContent="Testing read-only authentication…";
   try{const res=await fetch("/api/exchange_test",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":$("token").value},body:JSON.stringify({exchange_id:$("exchange").value,mode:$("mode").value,api_key:$("key").value,api_secret:$("secret").value,passphrase:$("pass").value})});const d=await res.json();r.textContent=d.ok?"✓ "+d.message+" · "+d.markets+" markets":("✕ "+(d.error||"verification failed"));r.className=d.ok?"positive":"negative";if(d.ok){sessionStorage.setItem("zerqen_token",$("token").value);loadConnections()}}catch(e){r.textContent="✕ network error";r.className="negative"}
