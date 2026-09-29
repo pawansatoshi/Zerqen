@@ -5,8 +5,8 @@ from api.backtest import _liq_price, _structural_stop
 
 def test_futures_liquidation_distance_is_leverage_dependent():
     entry = D(100)
-    assert _liq_price(entry, "buy", D("2")) == D("50.5")
-    assert _liq_price(entry, "sell", D("2")) == D("149.5")
+    assert _liq_price(entry, "buy", D(2)) == D("50.5")
+    assert _liq_price(entry, "sell", D(2)) == D("149.5")
 
 
 def test_structural_stop_respects_eight_percent_cap():
