@@ -36,7 +36,7 @@ class ExecutionService:
 
         try:
             result = self.adapter.submit(order, reference_price)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self.state.transition(order.client_order_id, OrderStatus.UNKNOWN)
             event = OrderEvent(
                 order.client_order_id, OrderStatus.UNKNOWN, 0.0, 0.0,
@@ -45,9 +45,7 @@ class ExecutionService:
             self._events[order.client_order_id] = event
             return ExecutionResult(event)
 
-        if result.status == OrderStatus.FILLED:
-            self.state.transition(order.client_order_id, OrderStatus.ACKNOWLEDGED)
-        elif result.status not in {OrderStatus.UNKNOWN, OrderStatus.REJECTED, OrderStatus.FAILED}:
+        if result.status not in {OrderStatus.UNKNOWN, OrderStatus.REJECTED, OrderStatus.FAILED}:
             self.state.transition(order.client_order_id, OrderStatus.ACKNOWLEDGED)
 
         current = self.state.status(order.client_order_id)
