@@ -45,10 +45,18 @@ def db():
             day_start_equity NUMERIC NOT NULL,
             halted BOOLEAN NOT NULL DEFAULT FALSE,
             flatten_requested BOOLEAN NOT NULL DEFAULT FALSE,
+            paused BOOLEAN NOT NULL DEFAULT FALSE,
+            exchange_id TEXT NOT NULL DEFAULT 'binance',
+            symbol TEXT NOT NULL DEFAULT 'BTC/USDT',
+            timeframe TEXT NOT NULL DEFAULT '1h',
             last_marked_at TIMESTAMPTZ,
             updated_at TIMESTAMPTZ NOT NULL
         )
     """)
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS paused BOOLEAN NOT NULL DEFAULT FALSE")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS exchange_id TEXT NOT NULL DEFAULT 'binance'")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS symbol TEXT NOT NULL DEFAULT 'BTC/USDT'")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS timeframe TEXT NOT NULL DEFAULT '1h'")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS zerqen_paper_orders (
             client_order_id TEXT PRIMARY KEY,
@@ -131,7 +139,7 @@ def now():
 
 def get_state(conn):
     row = conn.execute(
-        "SELECT account_id, starting_equity, cash, realized_pnl, fees, funding, slippage, peak_equity, day_start_equity, halted, flatten_requested, last_marked_at, updated_at FROM zerqen_paper_state WHERE account_id='default'"
+        "SELECT account_id, starting_equity, cash, realized_pnl, fees, funding, slippage, peak_equity, day_start_equity, halted, flatten_requested, paused, exchange_id, symbol, timeframe, last_marked_at, updated_at FROM zerqen_paper_state WHERE account_id='default'"
     ).fetchone()
     return row
 
@@ -146,25 +154,28 @@ def fetch_positions(conn):
     ]
 
 
-def fetch_prices(symbols):
-    import urllib.parse
-    import urllib.request
+def fetch_public_market(exchange_id, symbol, timeframe="1h", limit=120):
+    from api.market import public_market_probe
+    result = public_market_probe(exchange_id, symbol, timeframe, limit)
+    if result.get("connectivity_status") not in {"WORKING", "DEGRADED"}:
+        raise RuntimeError(result.get("error_type") or "public market unavailable")
+    closes = result.get("closes") or []
+    ticker = result.get("ticker_data") or {}
+    if not closes or ticker.get("last") is None:
+        raise RuntimeError("public market data incomplete")
+    rows = [
+        [result["times"][i], result["opens"][i], result["highs"][i], result["lows"][i], result["closes"][i], result["volumes"][i]]
+        for i in range(len(result["closes"]))
+    ]
+    return D(str(ticker["last"])), rows
 
-    out = {}
-    for symbol in symbols:
-        params = urllib.parse.urlencode({"symbol": symbol.replace("/", "").upper()})
-        with urllib.request.urlopen("https://api.binance.com/api/v3/ticker/price?" + params, timeout=6) as response:
-            out[symbol] = D(str(json.loads(response.read().decode())["price"]))
-    return out
+
+def fetch_prices(exchange_id, symbols, timeframe="1h"):
+    return {symbol: fetch_public_market(exchange_id, symbol, timeframe, 60)[0] for symbol in symbols}
 
 
-def fetch_candles(symbol, limit=120):
-    import urllib.parse
-    import urllib.request
-
-    params = urllib.parse.urlencode({"symbol": symbol.replace("/", "").upper(), "interval": "1h", "limit": limit})
-    with urllib.request.urlopen("https://api.binance.com/api/v3/klines?" + params, timeout=7) as response:
-        return json.loads(response.read().decode())
+def fetch_candles(exchange_id, symbol, timeframe="1h", limit=120):
+    return fetch_public_market(exchange_id, symbol, timeframe, limit)[1]
 
 
 def indicators(rows):
@@ -238,10 +249,10 @@ def status_payload(conn):
     state = get_state(conn)
     if not state:
         return {"ok": True, "initialized": False, "mode": "PAPER", "live_trading": False}
-    symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
+    symbols = [str(state[13])]
     prices = {}
     try:
-        prices = fetch_prices(symbols)
+        prices = fetch_prices(str(state[12]), symbols, str(state[14]))
     except Exception:  # noqa: BLE001
         prices = {}
     values = equity(conn, prices) if prices else None
@@ -278,6 +289,10 @@ def status_payload(conn):
         "gross_exposure": float(gross),
         "halted": bool(state[9]),
         "flatten_requested": bool(state[10]),
+        "paused": bool(state[11]),
+        "exchange_id": str(state[12]),
+        "symbol": str(state[13]),
+        "timeframe": str(state[14]),
         "prices": {k: float(v) for k,v in prices.items()},
         "positions": [
             {"symbol":r[0],"side":r[1],"quantity":float(r[2]),"average_entry":float(r[3]),"fees":float(r[4]),"funding":float(r[5]),"realized_pnl":float(r[6])}
@@ -325,8 +340,16 @@ class handler(BaseHTTPRequestHandler):
                     if existing:
                         return send(self,409,{"ok":False,"error":"paper account already initialized; reset before reinitializing"})
                     t=now()
-                    conn.execute("INSERT INTO zerqen_paper_state(account_id,starting_equity,cash,peak_equity,day_start_equity,updated_at) VALUES('default',%s,%s,%s,%s,%s)",(capital,capital,capital,capital,t))
-                    event(conn,"PAPER_INITIALIZED",{"starting_capital":str(capital)})
+                    exchange_id=str(data.get("exchange_id","binance"))
+                    symbol=str(data.get("symbol","BTC/USDT"))
+                    timeframe=str(data.get("timeframe","1h"))
+                    if exchange_id not in {"binance","okx","bybit","bitget","mexc","kucoin","gate","delta_india","coindcx","wazirx"}:
+                        return send(self,400,{"ok":False,"error":"unsupported paper market exchange"})
+                    if timeframe not in {"1h","4h","1d","1w"}:
+                        return send(self,400,{"ok":False,"error":"unsupported paper timeframe"})
+                    fetch_public_market(exchange_id, symbol, timeframe, 60)
+                    conn.execute("INSERT INTO zerqen_paper_state(account_id,starting_equity,cash,peak_equity,day_start_equity,exchange_id,symbol,timeframe,updated_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s,%s)",(capital,capital,capital,capital,exchange_id,symbol,timeframe,t))
+                    event(conn,"PAPER_INITIALIZED",{"starting_capital":str(capital),"exchange_id":exchange_id,"symbol":symbol,"timeframe":timeframe})
                     conn.commit()
                     return send(self,200,status_payload(conn))
 
@@ -335,6 +358,18 @@ class handler(BaseHTTPRequestHandler):
                         conn.execute("DELETE FROM "+table+" WHERE account_id='default'" if table!="zerqen_paper_state" else "DELETE FROM zerqen_paper_state WHERE account_id='default'")
                     conn.commit()
                     return send(self,200,{"ok":True,"reset":True,"live_trading":False})
+
+                if action=="pause":
+                    conn.execute("UPDATE zerqen_paper_state SET paused=TRUE,updated_at=%s WHERE account_id='default'",(now(),))
+                    event(conn,"PAPER_PAUSED",{"source":"operator"})
+                    conn.commit()
+                    return send(self,200,status_payload(conn))
+
+                if action=="resume":
+                    conn.execute("UPDATE zerqen_paper_state SET paused=FALSE,updated_at=%s WHERE account_id='default'",(now(),))
+                    event(conn,"PAPER_RESUMED",{"source":"operator"})
+                    conn.commit()
+                    return send(self,200,status_payload(conn))
 
                 if action=="halt":
                     conn.execute("UPDATE zerqen_paper_state SET halted=TRUE,updated_at=%s WHERE account_id='default'",(now(),))
@@ -352,7 +387,7 @@ class handler(BaseHTTPRequestHandler):
                     state=get_state(conn)
                     if not state:
                         return send(self,409,{"ok":False,"error":"paper account is not initialized"})
-                    prices=fetch_prices(["BTC/USDT","ETH/USDT","SOL/USDT","BNB/USDT"])
+                    prices=fetch_prices(str(state[12]), [str(p.symbol) for p in fetch_positions(conn)], str(state[14]))
                     for p in fetch_positions(conn):
                         price=prices.get(p.symbol)
                         if not price: continue
@@ -371,9 +406,16 @@ class handler(BaseHTTPRequestHandler):
                     state=get_state(conn)
                     if not state:
                         return send(self,409,{"ok":False,"error":"initialize PAPER mode first"})
-                    prices=fetch_prices(["BTC/USDT","ETH/USDT","SOL/USDT","BNB/USDT"])
+                    if bool(state[11]):
+                        return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
+                    if bool(state[9]):
+                        return send(self,409,{"ok":False,"error":"HALT NEW ORDERS is active"})
+                    exchange_id=str(state[12])
+                    symbol=str(state[13])
+                    timeframe=str(state[14])
+                    prices=fetch_prices(exchange_id,[symbol],timeframe)
                     for symbol in prices:
-                        rows=fetch_candles(symbol)
+                        rows=fetch_candles(exchange_id,symbol,timeframe)
                         _,e9,e21,atr,rsi=indicators(rows)
                         signal = e9[-1] > e21[-1] and e9[-2] <= e21[-2] and D(50) <= rsi <= D(75)
                         event(conn,"STRATEGY_DECISION",{"symbol":symbol,"strategy":"baseline_trend","regime":"trend_up" if e9[-1]>e21[-1] else "range","signal":signal,"status":"VALIDATED" if eligible_strategies("trend_up" if e9[-1]>e21[-1] else "range") else "INSUFFICIENT_DATA","reason":"no runtime paper order is authorized until a strategy has persisted OOS/walk-forward/Monte Carlo evidence"})
@@ -385,12 +427,18 @@ class handler(BaseHTTPRequestHandler):
                     state=get_state(conn)
                     if not state: return send(self,409,{"ok":False,"error":"initialize PAPER mode first"})
                     if state[9]: return send(self,409,{"ok":False,"error":"HALT NEW ORDERS is active"})
-                    symbol=str(data.get("symbol","BTC/USDT"))
+                    symbol=str(data.get("symbol",state[13]))
                     side=str(data.get("side","buy")).lower()
+                    exchange_id=str(state[12])
+                    timeframe=str(state[14])
+                    if symbol != str(state[13]):
+                        return send(self,400,{"ok":False,"error":"paper session symbol is fixed; reset and initialize with the desired symbol"})
                     if side not in {"buy","sell"}: return send(self,400,{"ok":False,"error":"side must be buy or sell"})
-                    prices=fetch_prices([symbol])
+                    if bool(state[11]):
+                        return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
+                    prices=fetch_prices(exchange_id,[symbol],timeframe)
                     price=prices[symbol]
-                    rows=fetch_candles(symbol)
+                    rows=fetch_candles(exchange_id,symbol,timeframe)
                     _,_,_,atr,_=indicators(rows)
                     state_values=equity(conn,prices)
                     eq=state_values[0] if state_values else D(str(state[2]))
