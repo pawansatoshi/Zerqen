@@ -366,7 +366,18 @@ async function loadPaper(){if(!token()){return}try{const r=await api("/api/paper
 async function paperInitialize(){const capital=$("paperCapital").value;if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Paper account initialized":"Initialization failed")}
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
-  const r=await paperApi("cycle");const d=await r.json();renderPaper(d);await loadLedger();
+  const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
+  if(d.ok && d.initialized){
+    const decision=(d.events||[]).find(e=>e.type==="STRATEGY_DECISION" && e.payload?.risk_decision==="APPROVED");
+    const hasPosition=(d.positions||[]).some(p=>p.symbol===d.symbol);
+    if(decision && !hasPosition){
+      const er=await paperApi("test_order",{symbol:d.symbol,side:decision.payload?.signal==="SELL"?"sell":"buy"});
+      const ed=await er.json();
+      renderPaper(ed);
+      if(ed.ok) $("paperMessage").textContent="DEMO execution filled from approved strategy signal";
+    }
+  }
+  await loadLedger();
   if(!d.ok && d.error) $("paperMessage").textContent=d.error;
 }
 function paperToggleAuto(){
