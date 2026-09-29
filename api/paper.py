@@ -242,8 +242,8 @@ def status_payload(conn):
     prices = {}
     try:
         prices = fetch_prices(symbols)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        prices = {}
     values = equity(conn, prices) if prices else None
     eq = values[0] if values else D(str(state[2]))
     unrealized = values[1] if values else D(0)
