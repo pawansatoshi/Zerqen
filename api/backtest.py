@@ -197,6 +197,7 @@ def backtest(
                 funding = position["entry"] * position["qty"] * FUNDING_RATE_ASSUMPTION * (D(1) if position["side"] == "buy" else D(-1))
                 cash -= funding
                 funding_total += funding
+                position["funding"] += funding
             hit = None
             if market_type == "futures":
                 liq = position["liq"]
@@ -292,7 +293,7 @@ def backtest(
             "exit": float(exit_price),
             "quantity": float(position["qty"]),
             "gross_pnl": float(gross),
-            "net_pnl": float(gross - position["entry_fee"] - fee),
+            "net_pnl": float(gross - position["entry_fee"] - fee - position["funding"]),
             "reason": "END_OF_TEST",
             "r_multiple": float((gross - position["entry_fee"] - fee) / position["risk"] if position["risk"] else D(0)),
             "leverage": float(lev),
@@ -305,9 +306,13 @@ def backtest(
     gross_wins = sum(t["net_pnl"] for t in trades if t["net_pnl"] > 0)
     gross_losses = abs(sum(t["net_pnl"] for t in trades if t["net_pnl"] < 0))
     profit_factor = float(gross_wins / gross_losses) if gross_losses else (float("inf") if gross_wins else 0.0)
-    max_dd = max((D(str(x["equity"])) for x in equity_curve), default=capital)
-    min_eq = min((D(str(x["equity"])) for x in equity_curve), default=capital)
-    max_drawdown = (max_dd - min_eq) / max_dd if max_dd else D(0)
+    running_peak = capital
+    max_drawdown = D(0)
+    for point in equity_curve:
+        eq_point = D(str(point["equity"]))
+        running_peak = max(running_peak, eq_point)
+        if running_peak > 0:
+            max_drawdown = max(max_drawdown, (running_peak - eq_point) / running_peak)
 
     return {
         "ok": True,
