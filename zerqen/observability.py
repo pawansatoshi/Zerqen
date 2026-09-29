@@ -12,7 +12,7 @@ class AuditEvent:
     payload: dict[str, Any]
 
     @classmethod
-    def create(cls, event: str, run_id: str, **payload: Any) -> "AuditEvent":
+    def create(cls, event: str, run_id: str, **payload: Any) -> AuditEvent:
         return cls(event, datetime.now(timezone.utc).isoformat(), run_id, payload)
 
     def to_json(self) -> str:
