@@ -369,7 +369,7 @@ class handler(BaseHTTPRequestHandler):
                     return send(self,200,status_payload(conn))
 
                 if action=="reset":
-                    for table in ["zerqen_paper_fills","zerqen_paper_orders","zerqen_paper_positions","zerqen_paper_equity_snapshots","zerqen_paper_events","zerqen_paper_state"]:
+                    for table in ["zerqen_paper_fills","zerqen_paper_orders","zerqen_paper_positions","zerqen_paper_equity_snapshots","zerqen_paper_events","zerqen_paper_trades","zerqen_paper_decisions","zerqen_paper_state"]:
                         conn.execute("DELETE FROM "+table+" WHERE account_id='default'" if table!="zerqen_paper_state" else "DELETE FROM zerqen_paper_state WHERE account_id='default'")
                     conn.commit()
                     return send(self,200,{"ok":True,"reset":True,"live_trading":False})
