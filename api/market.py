@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
