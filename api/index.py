@@ -247,7 +247,8 @@ def market(
 
 
 @app.get("/api/demo-worker")
-def demo_worker_get():
+def demo_worker_get(x_zerqen_dashboard_token: str | None = Header(default=None)):
+    require_dashboard_token(x_zerqen_dashboard_token)
     from api.demo_worker import worker_status
     try:
         return {"ok": True, **worker_status()}
@@ -256,8 +257,12 @@ def demo_worker_get():
 
 
 @app.post("/api/demo-worker")
-async def demo_worker_post(request: Request):
-    from api.demo_worker import set_enabled
+async def demo_worker_post(
+    request: Request,
+    x_zerqen_dashboard_token: str | None = Header(default=None),
+):
+    require_dashboard_token(x_zerqen_dashboard_token)
+    from api.demo_worker import set_enabled, heartbeat
     body = await request.json()
     if body.get("action") == "heartbeat":
         from api.demo_worker import heartbeat
