@@ -114,7 +114,7 @@ class handler(BaseHTTPRequestHandler):
                                 "unrealized": p.get("unrealizedPnl"),
                                 "leverage": p.get("leverage"),
                             })
-                except Exception:
+                except Exception:  # noqa: BLE001
                     positions = []
 
             trades = []
@@ -122,7 +122,7 @@ class handler(BaseHTTPRequestHandler):
                 try:
                     raw = exchange.fetch_my_trades(limit=25)
                     trades = [serialise_trade(t) for t in raw]
-                except Exception:
+                except Exception:  # noqa: BLE001
                     trades = []
 
             nonzero = []
@@ -145,7 +145,7 @@ class handler(BaseHTTPRequestHandler):
             })
         except LookupError:
             return send(self, 404, {"ok": False, "error": "no saved connection"})
-        except Exception:
+        except Exception:  # noqa: BLE001
             return send(self, 502, {"ok": False, "error": "account data temporarily unavailable"})
 
     def log_message(self, format, *args):
