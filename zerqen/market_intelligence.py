@@ -42,7 +42,7 @@ class MarketIntelligenceReport:
     warnings: list[str]
     report_hash: str = ""
 
-    def finalize(self) -> "MarketIntelligenceReport":
+    def finalize(self) -> MarketIntelligenceReport:
         payload = asdict(self)
         payload.pop("report_hash", None)
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
