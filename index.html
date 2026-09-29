@@ -424,7 +424,7 @@ async function takeScannerTrade(symbol,side,silent=false){
   if(!d.ok){if(!silent)toast(d.error||"demo cycle rejected");return}
   const decision=(d.events||[]).find(e=>e.type==="STRATEGY_DECISION"&&e.payload?.risk_decision==="APPROVED");
   if(decision){
-    const er=await paperApi("test_order",{symbol:symbol,side:side.toLowerCase()});const ed=await er.json();renderPaper(ed);await loadLedger();
+    const er=await paperApi("test_order",{symbol:symbol,side:side.toLowerCase(),scanner:true});const ed=await er.json();renderPaper(ed);await loadLedger();
     if(ed.ok){playAlert(side);$("paperMessage").textContent="DEMO "+side+" filled on "+symbol+" · simulated only";if(!silent)toast("DEMO "+side+" filled · "+symbol)}
   }else if(!silent)toast("Setup selected but risk/strategy gate did not approve "+symbol);
 }
