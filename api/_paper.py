@@ -417,6 +417,7 @@ def manage_protective_exits(conn, state, prices):
         cash_delta=(fill_price*qty-fee) if p.side=="buy" else (-fill_price*qty-fee)
         conn.execute("UPDATE zerqen_paper_state SET cash=cash+%s,fees=fees+%s,slippage=slippage+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default'",
                      (cash_delta,fee,slip_per_unit*qty,net,t))
+        closing_equity=equity(conn,prices)[0] if equity(conn,prices) else D(str(state[2]))
         decision_id=record_decision(conn,state,signal_id="auto-exit-"+uuid.uuid4().hex,strategy=str(raw[11]),regime=str(raw[12]),
                                     signal_timestamp=t,signal_direction=side.upper(),ema9=D(0),ema21=D(0),rsi=D(0),atr=D(0),
                                     risk_per_trade=PaperLimits().risk_per_trade,aggregate_open_risk=D(0),open_positions=max(0,len(fetch_positions(conn))-1),
@@ -432,7 +433,7 @@ def manage_protective_exits(conn, state, prices):
             stop_price,target_price,risk_at_entry,gross_pnl,fees,slippage,funding,net_pnl,r_multiple,
             opening_equity,closing_equity,status,duration_seconds
         ) VALUES(%s,'default',%s,%s,NULL,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (trade_id,decision_id,raw[0],"auto-exit-"+uuid.uuid4().hex,raw[8],oid,raw[9],fid,state[12],p.symbol,state[14],p.side,raw[11],raw[12],t,raw[10] or t,t,entry_price,fill_price,qty,stop,target,risk_at_entry,gross,D(str(raw[6]))+fee,entry_slippage+slip_per_unit*qty,D(str(raw[7])),net,r_mult,D(str(raw[14] or state[8])),D(str(state[2])),"CLOSED",duration))
+        (trade_id,decision_id,raw[0],"auto-exit-"+uuid.uuid4().hex,raw[8],oid,raw[9],fid,state[12],p.symbol,state[14],p.side,raw[11],raw[12],t,raw[10] or t,t,entry_price,fill_price,qty,stop,target,risk_at_entry,gross,D(str(raw[6]))+fee,entry_slippage+slip_per_unit*qty,D(str(raw[7])),net,r_mult,D(str(raw[14] or state[8])),closing_equity,"CLOSED",duration))
         event(conn,"PROTECTIVE_EXIT_FILLED",{"symbol":p.symbol,"reason":reason,"side":p.side,"quantity":str(qty),"price":str(fill_price),"net_pnl":str(net)})
         closed.append({"symbol":p.symbol,"reason":reason,"net_pnl":str(net)})
     return closed
@@ -549,6 +550,11 @@ class handler(BaseHTTPRequestHandler):
                         state=get_state(conn)
                     prices=fetch_prices(exchange_id,[symbol],timeframe)
                     protective_exits=manage_protective_exits(conn,state,prices)
+                    if protective_exits:
+                        post_exit=snapshot(conn,prices)
+                        if post_exit and enforce_daily_target(conn,get_state(conn),post_exit[4]):
+                            conn.commit()
+                            return send(self,200,status_payload(conn))
                     for symbol in prices:
                         rows=fetch_candles(exchange_id,symbol,timeframe)
                         _,e9,e21,atr,rsi=indicators(rows)
