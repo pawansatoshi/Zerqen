@@ -41,9 +41,9 @@ def test_trade_dict_serializes_decimal_and_timestamps():
         "trade-1", "signal-1", "entry-1", "exit-1", "fill-1", "fill-2",
         "okx", "BTC/USDT", "1h", "buy", "PAPER_TEST_HARNESS", "trend_up",
         ts, ts, ts,
-        Decimal("100"), Decimal("110"), Decimal("1"), Decimal("97"), Decimal("106"),
-        Decimal("5"), Decimal("10"), Decimal("0.2"), Decimal("0.1"), Decimal("0"),
-        Decimal("9.7"), Decimal("1.94"), Decimal("10000"), Decimal("10009.7"),
+        Decimal(100), Decimal(110), Decimal(1), Decimal(97), Decimal(106),
+        Decimal(5), Decimal(10), Decimal("0.2"), Decimal("0.1"), Decimal(0),
+        Decimal("9.7"), Decimal("1.94"), Decimal(10000), Decimal("10009.7"),
         "CLOSED", 60,
     )
     result = _trade_dict(row)
