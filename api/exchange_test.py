@@ -54,5 +54,5 @@ class handler(BaseHTTPRequestHandler):
                 "message": "read-only authentication and account access verified; no order was placed",
             }
             return send(self, 200, result)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return send(self, 400, {"ok": False, "error": type(exc).__name__ + ": " + str(exc)})
