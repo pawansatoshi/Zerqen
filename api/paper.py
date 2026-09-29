@@ -306,7 +306,7 @@ class handler(BaseHTTPRequestHandler):
         try:
             with db() as conn:
                 return send(self, 200, status_payload(conn))
-        except Exception:
+        except Exception:  # noqa: BLE001
             return send(self, 503, {"ok":False,"error":"paper state unavailable"})
 
     def do_POST(self):
@@ -414,6 +414,7 @@ class handler(BaseHTTPRequestHandler):
                     conn.execute("UPDATE zerqen_paper_orders SET status='SUBMITTED',updated_at=%s WHERE client_order_id=%s",(now(),oid))
                     conn.execute("UPDATE zerqen_paper_orders SET status='ACKNOWLEDGED',updated_at=%s WHERE client_order_id=%s",(now(),oid))
                     conn.execute("INSERT INTO zerqen_paper_fills(fill_id,client_order_id,account_id,symbol,side,quantity,price,fee,funding,slippage,created_at) VALUES(%s,%s,'default',%s,%s,%s,%s,%s,0,%s,%s)",(str(uuid.uuid4()),oid,symbol,side,qty,fill_price,fee,slip*qty,t))
+                    realized=D("0")
                     existing=next((p for p in positions if p.symbol==symbol),None)
                     if existing:
                         newpos,realized=apply_fill(existing,side,qty,fill_price,fee,D("0"))
@@ -422,8 +423,7 @@ class handler(BaseHTTPRequestHandler):
                         else:
                             conn.execute("DELETE FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s",(symbol,))
                     else:
-                                        conn.execute("INSERT INTO zerqen_paper_positions(account_id,symbol,side,quantity,average_entry,fees,funding,realized_pnl,updated_at) VALUES('default',%s,%s,%s,%s,%s,0,0,%s)",(symbol,side,qty,fill_price,fee,now()))
-                        realized=D("0")
+                        conn.execute("INSERT INTO zerqen_paper_positions(account_id,symbol,side,quantity,average_entry,fees,funding,realized_pnl,updated_at) VALUES('default',%s,%s,%s,%s,%s,0,0,%s)",(symbol,side,qty,fill_price,fee,now()))
                     conn.execute("UPDATE zerqen_paper_orders SET status='FILLED',filled_quantity=%s,average_price=%s,updated_at=%s WHERE client_order_id=%s",(qty,fill_price,now(),oid))
                     cash_delta = (-fill_price * qty - fee) if side == "buy" else (fill_price * qty - fee)
                     conn.execute("UPDATE zerqen_paper_state SET cash=cash+%s,fees=fees+%s,slippage=slippage+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default'",(cash_delta,fee,slip*qty,realized,now()))
