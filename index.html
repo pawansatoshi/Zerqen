@@ -100,6 +100,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
   <div class="section"><div class="section-head"><div><h2>Control</h2><p>Starting capital is explicit; no financial value is invented.</p></div></div>
     <div class="card small-card"><div class="form">
       <label>Paper market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px"><select id="paperExchange"></select><input id="paperSymbol" value="BTC/USDT" placeholder="BTC/USDT"><select id="paperTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select></div>
+      <label>Demo currency</label><select id="paperCurrency"><option value="USD">USD · $</option><option value="INR">INR · ₹</option></select>
       <label>Paper starting capital</label><input id="paperCapital" type="number" min="1" step="0.01" placeholder="Enter starting capital">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="primary" onclick="paperInitialize()">Start demo session</button>
@@ -113,6 +114,18 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
       </div>
       <div id="paperMessage" class="note">No paper account initialized.</div>
     </div></div>
+  </div>
+  <div class="section"><div class="section-head"><div><h2>Top 50 setup scanner</h2><p>Scans the most liquid USDT pairs, scores trend, momentum, RSI and volume, then selects the strongest current setup.</p></div><div style="display:flex;gap:7px"><button class="secondary" onclick="scanTop50()">Scan now</button><button class="secondary" id="scanAutoBtn" onclick="toggleScanner()">Auto scan OFF</button></div></div>
+    <div class="card small-card">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <span class="badge" id="scannerState">READY</span>
+        <button class="primary" id="buyAlertBtn" onclick="testAlertSound('BUY')">BUY ALERT</button>
+        <button class="secondary" id="sellAlertBtn" onclick="testAlertSound('SELL')">SELL ALERT</button>
+        <button class="secondary" id="soundBtn" onclick="toggleAlertSound()">Sound ON</button>
+        <span class="sub" id="scannerBest">No setup selected</span>
+      </div>
+      <div class="table-scroll"><table class="table" style="min-width:900px"><thead><tr><th>Rank</th><th>Pair</th><th>Setup</th><th>Score</th><th>24H</th><th>RSI</th><th>Trend</th><th>Momentum</th><th>Volume</th><th>Action</th></tr></thead><tbody id="scannerRows"><tr><td colspan="10" class="empty">Run a scan to analyze the top 50 liquid USDT pairs.</td></tr></tbody></table></div>
+    </div>
   </div>
   <div class="section"><div class="section-head"><div><h2>Paper positions</h2><p>Authoritative server-side positions marked against real public prices</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg entry</th><th>Fees</th><th>Realized P&L</th></tr></thead><tbody id="paperPositions"><tr><td colspan="6" class="empty">No paper positions.</td></tr></tbody></table></div></div></div>
   <div class="section"><div class="section-head"><div><h2>Paper orders</h2><p>Durable order lifecycle</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Fill</th><th>Status</th><th>Strategy</th></tr></thead><tbody id="paperOrders"><tr><td colspan="7" class="empty">No paper orders.</td></tr></tbody></table></div></div></div>
@@ -352,18 +365,69 @@ function selectExecutionMode(mode){
 }
 async function paperApi(action,extra={}){return api("/api/paper",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action},extra))})}
 function paperConfig(){return {exchange_id:$("paperExchange").value,symbol:$("paperSymbol").value.trim().toUpperCase(),timeframe:$("paperTimeframe").value}}
-function renderPaper(d){
+function renderPaper(d){window.lastPaperData=d;
   if(!d||!d.initialized){$("paperMode").textContent="PAPER · NOT INITIALIZED";$("paperMessage").textContent=d?.error||"Set an explicit starting capital to begin.";return}
-  $("paperEquity").textContent="$"+fmt(d.equity);$("paperCash").textContent="$"+fmt(d.cash);$("paperRealized").textContent=(d.realized_pnl>=0?"+":"")+fmt(d.realized_pnl);$("paperUnrealized").textContent=(d.unrealized_pnl>=0?"+":"")+fmt(d.unrealized_pnl);$("paperDD").textContent=fmt(d.drawdown*100,2)+"%";
+  $("paperEquity").textContent=displayMoney(d.equity);$("paperCash").textContent=displayMoney(d.cash);$("paperRealized").textContent=(d.realized_pnl>=0?"+":"")+fmt(d.realized_pnl);$("paperUnrealized").textContent=(d.unrealized_pnl>=0?"+":"")+fmt(d.unrealized_pnl);$("paperDD").textContent=fmt(d.drawdown*100,2)+"%";
   $("paperDaily").textContent=fmt((d.daily_pnl/Math.max(d.equity,0.0000001))*100,2)+"%";$("paperExposure").textContent=fmt(d.gross_exposure/Math.max(d.equity,0.0000001),2)+"x";
   $("paperSafety").textContent=d.halted?"HALTED":(d.paused?"PAUSED":"ARMED");$("paperHaltState").textContent=d.halted?"HALT NEW ORDERS ACTIVE":(d.paused?"PAPER SESSION PAUSED":"Paper execution ready");$("paperMode").textContent="PAPER · LIVE CAPITAL OFF";
   $("paperMessage").textContent="research hurdle 8.00% — not a trading requirement";
-  $("paperPositions").innerHTML=d.positions.length?d.positions.map(p=>"<tr><td>"+p.symbol+"</td><td>"+p.side.toUpperCase()+"</td><td>"+fmt(p.quantity,6)+"</td><td>$"+fmt(p.average_entry)+"</td><td>$"+fmt(p.fees,4)+"</td><td>"+fmt(p.realized_pnl,4)+"</td></tr>").join(""):"<tr><td colspan='6' class='empty'>No paper positions.</td></tr>";
+  $("paperPositions").innerHTML=d.positions.length?d.positions.map(p=>"<tr><td>"+p.symbol+"</td><td>"+p.side.toUpperCase()+"</td><td>"+fmt(p.quantity,6)+"</td><td>"+displayMoney(p.average_entry)+"</td><td>"+displayMoney(p.fees)+"</td><td>"+fmt(p.realized_pnl,4)+"</td></tr>").join(""):"<tr><td colspan='6' class='empty'>No paper positions.</td></tr>";
   $("paperOrders").innerHTML=d.orders.length?d.orders.map(o=>"<tr><td>"+new Date(o.created_at).toLocaleString()+"</td><td>"+o.symbol+"</td><td>"+o.side.toUpperCase()+"</td><td>"+fmt(o.quantity,6)+"</td><td>"+(o.average_price?"$"+fmt(o.average_price):"—")+"</td><td><span class='badge'>"+o.status+"</span></td><td>"+(o.strategy||"—")+"</td></tr>").join(""):"<tr><td colspan='7' class='empty'>No paper orders.</td></tr>";
   $("paperEvents").innerHTML=d.events.length?d.events.map(e=>"<tr><td>"+new Date(e.created_at).toLocaleString()+"</td><td>"+e.type+"</td><td>"+JSON.stringify(e.payload).slice(0,240)+"</td></tr>").join(""):"<tr><td colspan='3' class='empty'>No paper events.</td></tr>";
 }
 async function loadPaper(){if(!token()){return}try{const r=await api("/api/paper",{cache:"no-store"});const d=await r.json();renderPaper(d)}catch(_){$("paperMessage").textContent="Paper state unavailable"}}
-async function paperInitialize(){const capital=$("paperCapital").value;if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Paper account initialized":"Initialization failed")}
+let alertSoundEnabled=true,scannerTimer=null,bestSetupSymbol="";
+let fxRate=1,displayCurrency="USD";
+function displayMoney(v){const n=Number(v||0)*fxRate;return displayCurrency==="INR"?"₹"+fmt(n):"$"+fmt(n)}
+async function loadFx(){
+  const cur=$("paperCurrency")?.value||"USD"; displayCurrency=cur; fxRate=1;
+  if(cur==="INR"){try{const r=await fetch("/api/fx?base=USD&quote=INR",{cache:"no-store"});const d=await r.json();if(d.ok)fxRate=Number(d.rate)||1}catch(_){}}
+  if(window.lastPaperData) renderPaper(window.lastPaperData);
+}
+function playAlert(side){
+  if(!alertSoundEnabled)return;
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type="sine";osc.frequency.value=side==="BUY"?880:440;
+    gain.gain.setValueAtTime(.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.18,ctx.currentTime+.02);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.32);
+    osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.34);
+  }catch(_){}
+}
+function testAlertSound(side){playAlert(side);toast(side+" alert sound tested")}
+function toggleAlertSound(){alertSoundEnabled=!alertSoundEnabled;$("soundBtn").textContent="Sound "+(alertSoundEnabled?"ON":"OFF");if(alertSoundEnabled)playAlert("BUY")}
+function toggleScanner(){
+  if(scannerTimer){clearInterval(scannerTimer);scannerTimer=null;$("scanAutoBtn").textContent="Auto scan OFF";return}
+  scanTop50();scannerTimer=setInterval(scanTop50,60000);$("scanAutoBtn").textContent="Auto scan ON · 60s";
+}
+async function scanTop50(){
+  $("scannerState").textContent="SCANNING 50";
+  try{
+    const r=await fetch("/api/scanner?exchange="+encodeURIComponent($("paperExchange")?.value||"binance")+"&quote=USDT&limit=50&timeframe="+encodeURIComponent($("paperTimeframe")?.value||"1h"),{cache:"no-store"});
+    const d=await r.json();
+    if(!d.ok){$("scannerState").textContent="FAILED";toast(d.error||"scanner unavailable");return}
+    const actionable=d.results.filter(x=>x.side==="BUY"||x.side==="SELL");
+    const best=actionable[0]||d.results[0];
+    if(best){bestSetupSymbol=best.symbol;$("scannerBest").textContent="best current setup: "+best.symbol+" · "+best.side+" · score "+best.score;$("scannerState").textContent="LIVE · "+d.scanned+" PAIRS"}
+    $("scannerRows").innerHTML=d.results.slice(0,15).map((x,i)=>"<tr><td>"+(i+1)+"</td><td><strong>"+x.symbol+"</strong></td><td class='"+(x.side==="BUY"?"filled":x.side==="SELL"?"negative":"")+"'>"+x.side+"</td><td>"+x.score+"</td><td>"+(x.change24h>=0?"+":"")+fmt(x.change24h)+"%</td><td>"+fmt(x.rsi,1)+"</td><td>"+x.emaTrend+"</td><td>"+(x.momentum>=0?"+":"")+fmt(x.momentum)+"%</td><td>"+fmt(x.volumeRatio,2)+"x</td><td><button class='connect-btn' onclick='takeScannerTrade("+JSON.stringify(x.symbol)+","+JSON.stringify(x.side)+")'>TAKE DEMO</button></td></tr>").join("");
+    if(best&&best.side!=="WATCH"){
+      const key=best.symbol+":"+best.side;
+      if(window.lastScannerAlert!==key){window.lastScannerAlert=key;playAlert(best.side);toast(best.side+" setup detected · "+best.symbol)}
+      if(autoDemoTimer && $("executionModeMessage").textContent.startsWith("Demo")) await takeScannerTrade(best.symbol,best.side,true);
+    }
+  }catch(_){$("scannerState").textContent="FAILED";toast("top-50 scanner request failed")}
+}
+async function takeScannerTrade(symbol,side,silent=false){
+  if(!symbol||!["BUY","SELL"].includes(side))return;
+  $("paperSymbol").value=symbol;
+  const r=await paperApi("cycle",{symbol_override:symbol});const d=await r.json();renderPaper(d);
+  if(!d.ok){if(!silent)toast(d.error||"demo cycle rejected");return}
+  const decision=(d.events||[]).find(e=>e.type==="STRATEGY_DECISION"&&e.payload?.risk_decision==="APPROVED");
+  if(decision){
+    const er=await paperApi("test_order",{symbol:symbol,side:side.toLowerCase()});const ed=await er.json();renderPaper(ed);await loadLedger();
+    if(ed.ok){playAlert(side);$("paperMessage").textContent="DEMO "+side+" filled on "+symbol+" · simulated only";if(!silent)toast("DEMO "+side+" filled · "+symbol)}
+  }else if(!silent)toast("Setup selected but risk/strategy gate did not approve "+symbol);
+}
+async function paperInitialize(){const capital=$("paperCapital").value;displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Paper account initialized":"Initialization failed")}
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
   const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
@@ -395,7 +459,7 @@ async function paperHalt(){const r=await paperApi("halt");const d=await r.json()
 async function paperFlatten(){const r=await paperApi("flatten");const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Paper positions flattened":"Flatten failed")}
 async function paperReset(){if(!confirm("Reset PAPER account only? This cannot affect exchange accounts, credentials, or production state."))return;const r=await paperApi("reset");const d=await r.json();renderPaper(d);toast(d.ok?"Paper account reset":"Reset failed")}
 
-function fillPaperExchanges(){const s=$("paperExchange");if(!s||s.options.length)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)));s.value="okx"}
+function fillPaperExchanges(){const s=$("paperExchange");if(!s||s.options.length)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)));s.value="binance";$("paperCurrency")?.addEventListener("change",loadFx)}
 function renderEquity(){const e=$("equityChart");if(e)e.innerHTML="<div class='empty'>No persisted equity snapshots yet. Live account value is shown after an exchange connection.</div>"}
 function esc(v){return String(v==null?"—":v).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]))}
 function pct(v){return fmt(Number(v||0)*100,2)+"%"}
