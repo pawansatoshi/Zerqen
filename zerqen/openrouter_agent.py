@@ -36,7 +36,7 @@ class FreeModelRegistry:
     @classmethod
     def _is_free(cls, model):
         p = model.get('pricing') or {}
-        return cls._price(p.get('prompt')) == Decimal('0') and cls._price(p.get('completion')) == Decimal('0')
+        return cls._price(p.get('prompt')) == Decimal(0) and cls._price(p.get('completion')) == Decimal(0)
 
     def refresh(self, force=False):
         now = time.monotonic()
@@ -51,9 +51,9 @@ class FreeModelRegistry:
             if not mid:
                 continue
             p = raw.get('pricing') or {}
-            models.append(FreeModel(mid, self._price(p.get('prompt')) or Decimal('1'), self._price(p.get('completion')) or Decimal('1'), int(raw.get('context_length') or 0)))
+            models.append(FreeModel(mid, self._price(p.get('prompt')) or Decimal(1), self._price(p.get('completion')) or Decimal(1), int(raw.get('context_length') or 0)))
         if not any(m.model_id == FREE_ROUTER for m in models):
-            models.append(FreeModel(FREE_ROUTER, Decimal('0'), Decimal('0'), 200000))
+            models.append(FreeModel(FREE_ROUTER, Decimal(0), Decimal(0), 200000))
         self._models = sorted(models, key=lambda m: (m.model_id == FREE_ROUTER, -m.context_length, m.model_id))
         self._last_refresh = now
         return self._models
