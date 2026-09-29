@@ -406,7 +406,7 @@ async function scanTop50(){
     const r=await fetch("/api/scanner?exchange="+encodeURIComponent($("paperExchange")?.value||"binance")+"&quote=USDT&limit=50&timeframe="+encodeURIComponent($("paperTimeframe")?.value||"1h"),{cache:"no-store"});
     const d=await r.json();
     if(!d.ok){$("scannerState").textContent="FAILED";toast(d.error||"scanner unavailable");return}
-    const actionable=d.results.filter(x=>x.side==="BUY"||x.side==="SELL");
+    const actionable=d.results.filter(x=>(x.side==="BUY"||x.side==="SELL")&&x.volatilityOk&&x.liquidityOk);
     const best=actionable[0]||d.results[0];
     if(best){bestSetupSymbol=best.symbol;$("scannerBest").textContent="best current setup: "+best.symbol+" · "+best.side+" · score "+best.score;$("scannerState").textContent="LIVE · "+d.scanned+" PAIRS"}
     $("scannerRows").innerHTML=d.results.slice(0,15).map((x,i)=>"<tr><td>"+(i+1)+"</td><td><strong>"+x.symbol+"</strong></td><td class='"+(x.side==="BUY"?"filled":x.side==="SELL"?"negative":"")+"'>"+x.side+"</td><td>"+x.score+"</td><td>"+(x.change24h>=0?"+":"")+fmt(x.change24h)+"%</td><td>"+fmt(x.rsi,1)+"</td><td>"+x.emaTrend+"</td><td>"+(x.momentum>=0?"+":"")+fmt(x.momentum)+"%</td><td>"+fmt(x.volumeRatio,2)+"x</td><td><button class='connect-btn' onclick='takeScannerTrade("+JSON.stringify(x.symbol)+","+JSON.stringify(x.side)+")'>TAKE DEMO</button></td></tr>").join("");
