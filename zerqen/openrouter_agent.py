@@ -51,7 +51,9 @@ class FreeModelRegistry:
             if not mid:
                 continue
             p = raw.get('pricing') or {}
-            models.append(FreeModel(mid, self._price(p.get('prompt')) or Decimal(1), self._price(p.get('completion')) or Decimal(1), int(raw.get('context_length') or 0)))
+            prompt_price = self._price(p.get('prompt'))
+            completion_price = self._price(p.get('completion'))
+            models.append(FreeModel(mid, prompt_price if prompt_price is not None else Decimal(1), completion_price if completion_price is not None else Decimal(1), int(raw.get('context_length') or 0)))
         if not any(m.model_id == FREE_ROUTER for m in models):
             models.append(FreeModel(FREE_ROUTER, Decimal(0), Decimal(0), 200000))
         self._models = sorted(models, key=lambda m: (m.model_id == FREE_ROUTER, -m.context_length, m.model_id))
