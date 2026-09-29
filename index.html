@@ -388,14 +388,27 @@ function renderLedgerTables(d){
 }
 async function loadLedger(){if(!token())return;try{const res=await api("/api/ledger?"+ledgerParams().toString(),{cache:"no-store"});const d=await res.json();if(!res.ok||!d.ok){toast(d.error||"Ledger unavailable");return}fillLedgerExchanges();renderLedgerSummary(d);renderEquityHistory(d);renderLedgerTables(d)}catch(_){toast("Ledger unavailable")}}
 function detailSection(title,items){return "<div class='section'><div class='section-head'><div><h3>"+title+"</h3></div></div><div class='detail-grid'>"+items.map(([k,v])=>"<div class='detail-item'><label>"+esc(k)+"</label><strong>"+esc(v)+"</strong></div>").join("")+"</div></div>"}
-async function openTradeDetail(id){$("tradeDrawer").classList.add("open");$("tradeDrawerBody").textContent="Loading authoritative trade record…";try{const res=await api("/api/ledger/trade/"+encodeURIComponent(id),{cache:"no-store"});const d=await res.json();if(!d.ok){$("tradeDrawerBody").textContent=d.error||"Trade unavailable";return}const t=d.trade,r=d.risk_decision||{};const fmtv=v=>v==null?"—":(typeof v==="number"?fmt(v):v);$("tradeDrawerTitle").textContent="Trade "+t.trade_id;
-  $("tradeDrawerBody").innerHTML=detailSection("SIGNAL",[["Signal timestamp",t.signal_timestamp],["Strategy",t.strategy],["Timeframe",t.timeframe],["Market regime",t.regime],["Signal direction",r.signal_direction],["EMA 9",fmtv(r.ema9)],["EMA 21",fmtv(r.ema21)],["RSI",fmtv(r.rsi)],["ATR",fmtv(r.atr)])+
-  detailSection("RISK DECISION",[["Risk per trade",fmtv(r.risk_per_trade)],["Aggregate open risk",fmtv(r.aggregate_open_risk)],["Open positions",fmtv(r.open_positions)],["Daily loss",fmtv(r.daily_loss)],["Drawdown",pct(r.drawdown)],["Gross exposure",fmtv(r.gross_exposure)],["Allocation",pct(r.allocation)],["Risk decision",r.risk_decision]])+
-  detailSection("EXECUTION",[["Order ID",t.entry_order_id+" → "+t.exit_order_id],["Order creation",t.entry_timestamp],["Fill time",t.exit_timestamp],["Requested/entry price",fmtv(t.entry_price)],["Actual exit fill",fmtv(t.exit_price)],["Quantity",fmtv(t.quantity)],["Fees",fmtv(t.fees)],["Slippage",fmtv(t.slippage)],["Order status",t.status]])+
-  detailSection("POSITION",[["Entry",fmtv(t.entry_price)],["Exit",fmtv(t.exit_price)],["Stop",fmtv(t.stop_price)],["Target",fmtv(t.target_price)],["Duration",fmtv(t.duration_seconds)+"s"],["Realized P&L",money(t.net_pnl)],["R multiple",fmtv(t.r_multiple)+"R"]])+
-  detailSection("EQUITY IMPACT",[["Opening equity",fmtv(t.opening_equity)],["Capital allocated",fmtv(t.risk_at_entry)],["Closing equity",fmtv(t.closing_equity)],["Net equity change",money(Number(t.closing_equity)-Number(t.opening_equity))]])+
-  "<div class='section'><div class='small-title'>AUDIT EVENTS</div><div class='section-note'>"+esc(JSON.stringify(d.audit_events||[]))+"</div></div>";
-}catch(_){$("tradeDrawerBody").textContent="Trade detail unavailable"}}
+async function openTradeDetail(id){
+  $("tradeDrawer").classList.add("open");
+  $("tradeDrawerBody").textContent="Loading authoritative trade record…";
+  try{
+    const res=await api("/api/ledger/trade/"+encodeURIComponent(id),{cache:"no-store"});
+    const d=await res.json();
+    if(!d.ok){$("tradeDrawerBody").textContent=d.error||"Trade unavailable";return}
+    const t=d.trade,r=d.risk_decision||{};
+    const v=x=>x==null?"—":(typeof x==="number"?fmt(x):String(x));
+    $("tradeDrawerTitle").textContent="Trade "+t.trade_id;
+    const parts=[
+      detailSection("SIGNAL",[["Signal timestamp",t.signal_timestamp],["Strategy",t.strategy],["Timeframe",t.timeframe],["Market regime",t.regime],["Signal direction",r.signal_direction],["EMA 9",v(r.ema9)],["EMA 21",v(r.ema21)],["RSI",v(r.rsi)],["ATR",v(r.atr)]]),
+      detailSection("RISK DECISION",[["Risk per trade",v(r.risk_per_trade)],["Aggregate open risk",v(r.aggregate_open_risk)],["Open positions",v(r.open_positions)],["Daily loss",v(r.daily_loss)],["Drawdown",pct(r.drawdown)],["Gross exposure",v(r.gross_exposure)],["Allocation",pct(r.allocation)],["Risk decision",r.risk_decision]]),
+      detailSection("EXECUTION",[["Order ID",(t.entry_order_id||"—")+" → "+(t.exit_order_id||"—")],["Order creation",t.entry_timestamp],["Fill time",t.exit_timestamp],["Requested/entry price",v(t.entry_price)],["Actual exit fill",v(t.exit_price)],["Quantity",v(t.quantity)],["Fees",v(t.fees)],["Slippage",v(t.slippage)],["Order status",t.status]]),
+      detailSection("POSITION",[["Entry",v(t.entry_price)],["Exit",v(t.exit_price)],["Stop",v(t.stop_price)],["Target",v(t.target_price)],["Duration",v(t.duration_seconds)+"s"],["Realized P&L",money(t.net_pnl)],["R multiple",v(t.r_multiple)+"R"]]),
+      detailSection("EQUITY IMPACT",[["Opening equity",v(t.opening_equity)],["Capital allocated",v(t.risk_at_entry)],["Closing equity",v(t.closing_equity)],["Net equity change",money(Number(t.closing_equity)-Number(t.opening_equity))]]),
+      "<div class='section'><div class='small-title'>AUDIT EVENTS</div><div class='section-note'>"+esc(JSON.stringify(d.audit_events||[]))+"</div></div>"
+    ];
+    $("tradeDrawerBody").innerHTML=parts.join("");
+  }catch(_){$("tradeDrawerBody").textContent="Trade detail unavailable"}
+}
 function closeTradeDetail(){$("tradeDrawer").classList.remove("open")}
 async function exportLedger(format){if(!token()){toast("Dashboard token required");return}try{const res=await api("/api/ledger/export?format="+format+"&"+ledgerParams().toString(),{cache:"no-store"});if(!res.ok){const d=await res.json();toast(d.error||"Export failed");return}const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=format==="xlsx"?"zerqen-trade-ledger.xlsx":"zerqen-trade-ledger.csv";a.click();URL.revokeObjectURL(url);toast("Authoritative ledger exported")}catch(_){toast("Export failed")}}
 fillLedgerExchanges();fillExchanges();fillPaperExchanges();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
