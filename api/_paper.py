@@ -411,7 +411,7 @@ class handler(BaseHTTPRequestHandler):
                     if timeframe not in {"1h","4h","1d","1w"}:
                         return send(self,400,{"ok":False,"error":"unsupported paper timeframe"})
                     fetch_public_market(exchange_id, symbol, timeframe, 60)
-                    conn.execute("INSERT INTO zerqen_paper_state(account_id,starting_equity,cash,peak_equity,day_start_equity,exchange_id,symbol,timeframe,updated_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s,%s,%s)",(capital,capital,capital,capital,exchange_id,symbol,timeframe,market_type,t))
+                    conn.execute("INSERT INTO zerqen_paper_state(account_id,starting_equity,cash,peak_equity,day_start_equity,exchange_id,symbol,timeframe,market_type,updated_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s,%s,%s)",(capital,capital,capital,capital,exchange_id,symbol,timeframe,market_type,t))
                     event(conn,"PAPER_INITIALIZED",{"starting_capital":str(capital),"exchange_id":exchange_id,"symbol":symbol,"timeframe":timeframe})
                     snapshot(conn,{symbol: fetch_public_market(exchange_id,symbol,timeframe,20)[0]})
                     conn.commit()
@@ -471,6 +471,7 @@ class handler(BaseHTTPRequestHandler):
                     state=get_state(conn)
                     if not state:
                         return send(self,409,{"ok":False,"error":"initialize PAPER mode first"})
+                    state=rollover_if_new_day(conn,state)
                     if bool(state[11]):
                         return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
                     if bool(state[9]):
@@ -560,7 +561,7 @@ class handler(BaseHTTPRequestHandler):
                     structural_stop=dynamic_structural_stop(rows,side,price,atr)
                     values=equity(conn,prices)
                     eq=values[0] if values else D(str(state[2]))
-                    realized_net_base=compounding_equity(D(str(state[1])), D(str(state[3])))
+                    realized_net_base=D(str(state[8]))
                     risk=size_for_risk(realized_net_base,price,atr,PaperLimits(),side,structural_stop)
                     qty=D(str(data.get("quantity",risk.quantity)))
                     if qty<=0:
