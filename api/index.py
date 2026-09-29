@@ -313,7 +313,7 @@ def scanner(
             score=round(min(100,trend_score+momentum_score+rsi_score+volume_score),1)
             side="BUY" if trend>0 and 50<=rsi<=72 and momentum>0 else ("SELL" if trend<0 and 28<=rsi<=50 and momentum<0 else "WATCH")
             if not volatility_ok or not liquidity_ok: side="WATCH"
-            return {"symbol":symbol.replace("USDT","/USDT"),"price":closes[-1],"change24h":float(t.get("priceChangePercent") or 0),"volume24h":float(t.get("quoteVolume") or 0),"rsi":round(rsi,1),"emaTrend":"BULLISH" if trend>0 else "BEARISH","momentum":round(momentum,2),"volumeRatio":round(volratio,2),"score":score,"side":side,"volatilityOk":volatility_ok,"atrPct":round(atr_pct*100,2),"maxBarPct":round(max_bar_pct*100,2),"riskReward":2.0}
+            return {"symbol":symbol.replace("USDT","/USDT"),"price":closes[-1],"change24h":float(t.get("priceChangePercent") or 0),"volume24h":float(t.get("quoteVolume") or 0),"rsi":round(rsi,1),"emaTrend":"BULLISH" if trend>0 else "BEARISH","momentum":round(momentum,2),"volumeRatio":round(volratio,2),"score":score,"side":side,"volatilityOk":volatility_ok,"liquidityOk":liquidity_ok,"atrPct":round(atr_pct*100,2),"maxBarPct":round(max_bar_pct*100,2),"riskReward":2.0}
         results=[]
         with ThreadPoolExecutor(max_workers=12) as pool:
             futures=[pool.submit(analyze,t) for t in ranked]
