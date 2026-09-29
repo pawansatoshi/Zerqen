@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from zerqen.paper_engine import PaperLimits, Position, apply_fill, check_portfolio_risk, size_for_risk
+from zerqen.strategy_registry import eligible_strategies
 
 
 def send(handler, status, payload):
@@ -374,7 +375,7 @@ class handler(BaseHTTPRequestHandler):
                         rows=fetch_candles(symbol)
                         closes,e9,e21,atr,rsi=indicators(rows)
                         signal = e9[-1] > e21[-1] and e9[-2] <= e21[-2] and D("50") <= rsi <= D("75")
-                        event(conn,"STRATEGY_DECISION",{"symbol":symbol,"strategy":"baseline_trend","regime":"trend_up" if e9[-1]>e21[-1] else "range","signal":signal,"status":"INSUFFICIENT_DATA","reason":"strategy validation evidence is not yet persisted; no automatic paper order authorized"})
+                        event(conn,"STRATEGY_DECISION",{"symbol":symbol,"strategy":"baseline_trend","regime":"trend_up" if e9[-1]>e21[-1] else "range","signal":signal,"status":"VALIDATED" if eligible_strategies("trend_up" if e9[-1]>e21[-1] else "range") else "INSUFFICIENT_DATA","reason":"no runtime paper order is authorized until a strategy has persisted OOS/walk-forward/Monte Carlo evidence"})
                     snapshot(conn,prices)
                     conn.commit()
                     return send(self,200,status_payload(conn))
