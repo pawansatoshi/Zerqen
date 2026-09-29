@@ -236,7 +236,8 @@ def snapshot(conn, prices):
         return None
     eq, unrealized, gross, dd, daily = values
     t = now()
-    open_risk = sum((D(str(p.risk_at_entry)) if getattr(p, "risk_at_entry", None) else D(0)) for p in fetch_positions(conn))
+    risk_row = conn.execute("SELECT COALESCE(SUM(risk_at_entry),0) FROM zerqen_paper_positions WHERE account_id='default' AND quantity > 0").fetchone()
+    open_risk = D(str(risk_row[0] or 0))
     allocation = D(0) if eq <= 0 else gross / eq
     cumulative = eq - D(str(state[1]))
     conn.execute(
