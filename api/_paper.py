@@ -486,14 +486,15 @@ class handler(BaseHTTPRequestHandler):
                     _,e9,e21,atr,rsi=indicators(rows)
                     values=equity(conn,prices)
                     eq=values[0] if values else D(str(state[2]))
-                    risk=size_for_risk(eq,price,atr,PaperLimits(),side)
+                    realized_net_base=D(str(state[1])) + D(str(state[3])) - D(str(state[6]))
+                    risk=size_for_risk(realized_net_base,price,atr,PaperLimits(),side)
                     qty=D(str(data.get("quantity",risk.quantity)))
                     if qty<=0:
                         return send(self,400,{"ok":False,"error":"quantity must be positive"})
                     positions=fetch_positions(conn)
                     limits=PaperLimits()
                     proposed_notional=qty*price
-                    if proposed_notional > eq*limits.max_strategy_allocation:
+                    if proposed_notional > realized_net_base*limits.max_strategy_allocation:
                         return send(self,409,{"ok":False,"error":"strategy allocation cap exceeded"})
                     allowed,reason=check_portfolio_risk(eq,positions,risk,limits,values[4] if values else D(0),D(str(state[7])),proposed_notional=proposed_notional)
                     signal_id="signal-"+uuid.uuid4().hex
