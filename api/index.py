@@ -247,7 +247,7 @@ def market(
                         "quote_volume": float(t.get("quoteVolume", 0)),
                         "timestamp": int(t.get("closeTime", 0)),
                     }
-            except Exception:
+            except Exception:  # noqa: BLE001
                 ticker = None
 
         if not rows:
@@ -267,7 +267,7 @@ def market(
                         "quote_volume": t.get("quoteVolume"),
                         "timestamp": t.get("timestamp"),
                     }
-                except Exception:
+                except Exception:  # noqa: BLE001
                     ticker = None
 
         if not rows:
@@ -276,7 +276,7 @@ def market(
         return {"ok": True, "exchange": exchange, "symbol": symbol, "timeframe": timeframe, **result, "ticker": ticker}
     except HTTPException:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         return safe_error("market data temporarily unavailable")
 
 
@@ -294,7 +294,7 @@ def credentials_get(x_zerqen_dashboard_token: str | None = Header(default=None))
                 {"exchange_id": r[0], "mode": r[1], "updated_at": r[2].isoformat()} for r in rows
             ],
         }
-    except Exception:
+    except Exception:  # noqa: BLE001
         return safe_error("connection service temporarily unavailable")
 
 
@@ -346,7 +346,7 @@ def credentials_post(
             return {"ok": True, "saved": exchange_id, "encrypted": True}
     except HTTPException:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         return safe_error("could not save connection")
 
 
@@ -391,7 +391,7 @@ def exchange_test(
         }
     except HTTPException:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         return safe_error("exchange authentication failed")
 
 
@@ -438,7 +438,7 @@ def account(
                             "unrealized": p.get("unrealizedPnl"),
                             "leverage": p.get("leverage"),
                         })
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
 
         trades = []
@@ -458,7 +458,7 @@ def account(
                         "fee": fee.get("cost"),
                         "fee_currency": fee.get("currency"),
                     })
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
 
         return {
@@ -474,5 +474,5 @@ def account(
         raise HTTPException(404, "no saved connection")
     except HTTPException:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         return safe_error("account data temporarily unavailable")
