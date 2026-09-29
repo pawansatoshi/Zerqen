@@ -13,6 +13,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 
 app = FastAPI(title="Zerqen API", version="0.1.0")
 
+from api.ledger import router as ledger_router
+
+app.include_router(ledger_router)
+
 
 EXCHANGES = {
     "binance": "binance",
