@@ -515,13 +515,27 @@ async function paperCycle(){
   await loadLedger();
   if(!d.ok && d.error) $("paperMessage").textContent=d.error;
 }
-function paperToggleAuto(){
-  if(autoDemoTimer){clearInterval(autoDemoTimer);autoDemoTimer=null;$("autoDemoBtn").textContent="Start automatic demo";toast("Automatic demo stopped");return}
-  if(!$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
-  scanTop50();
-  autoDemoTimer=setInterval(scanTop50,60000);
-  $("autoDemoBtn").textContent="Stop automatic demo";
-  toast("Automatic demo started · top-50 scan every 60s");
+async function paperToggleAuto(){
+  const action=autoDemoTimer?"stop":"start";
+  if(action==="start" && !$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
+  try{
+    const r=await fetch("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.error||"worker control failed");
+    if(action==="start"){
+      scanTop50();
+      autoDemoTimer=setInterval(async()=>{await refreshPaperStatus();},60000);
+      $("autoDemoBtn").textContent="Stop automatic demo";
+      toast("Server demo worker enabled · mobile independent");
+    }else{
+      clearInterval(autoDemoTimer);autoDemoTimer=null;
+      $("autoDemoBtn").textContent="Start automatic demo";
+      toast("Server demo worker stopped");
+    }
+  }catch(e){toast(e.message||"worker control failed")}
+}
+async function refreshPaperStatus(){
+  try{const r=await paperApi("status");const d=await r.json();renderPaper(d);await loadLedger()}catch(e){}
 }
 async function paperTestOrder(){const r=await paperApi("test_order",{symbol:$("paperSymbol").value.trim().toUpperCase(),side:"buy"});const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
 async function paperPause(){const r=await paperApi("pause");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session paused":"Pause failed")}
