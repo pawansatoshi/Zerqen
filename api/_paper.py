@@ -431,67 +431,156 @@ class handler(BaseHTTPRequestHandler):
                     prices=fetch_prices(exchange_id,[symbol],timeframe)
                     for symbol in prices:
                         rows=fetch_candles(exchange_id,symbol,timeframe)
-                        _,e9,e21,atr,rsi=indicators(rows)
-                        signal = e9[-1] > e21[-1] and e9[-2] <= e21[-2] and D(50) <= rsi <= D(75)
-                        event(conn,"STRATEGY_DECISION",{"symbol":symbol,"strategy":"baseline_trend","regime":"trend_up" if e9[-1]>e21[-1] else "range","signal":signal,"status":"VALIDATED" if eligible_strategies("trend_up" if e9[-1]>e21[-1] else "range") else "INSUFFICIENT_DATA","reason":"no runtime paper order is authorized until a strategy has persisted OOS/walk-forward/Monte Carlo evidence"})
+                        closes,e9,e21,atr,rsi=indicators(rows)
+                        regime="trend_up" if e9[-1]>e21[-1] else "range"
+                        signal=e9[-1]>e21[-1] and e9[-2]<=e21[-2] and D(50)<=rsi<=D(75)
+                        signal_id="signal-"+uuid.uuid4().hex
+                        values=equity(conn,prices)
+                        eq,_,gross,dd,daily=values if values else (D(str(state[2])),D(0),D(0),D(0),D(0))
+                        open_positions=len(fetch_positions(conn))
+                        allocation=D(0) if eq<=0 else gross/eq
+                        candidates=eligible_strategies(regime)
+                        if not signal:
+                            risk_decision="REJECTED"
+                            reason="no valid setup"
+                        elif not candidates:
+                            risk_decision="REJECTED"
+                            reason="insufficient evidence"
+                        else:
+                            risk_decision="REJECTED"
+                            reason="strategy execution is not authorized until persisted OOS, walk-forward, and Monte Carlo evidence is validated"
+                        record_decision(conn,state,signal_id=signal_id,strategy="baseline_trend",regime=regime,
+                                        signal_timestamp=now(),signal_direction="BUY" if signal else "NONE",
+                                        ema9=e9[-1],ema21=e21[-1],rsi=rsi,atr=atr,
+                                        risk_per_trade=PaperLimits().risk_per_trade,
+                                        aggregate_open_risk=PaperLimits().aggregate_open_risk,
+                                        open_positions=open_positions,daily_loss=daily,drawdown=dd,
+                                        gross_exposure=gross,allocation=allocation,risk_decision=risk_decision,
+                                        rejected=True,rejection_reason=reason)
+                        event(conn,"STRATEGY_DECISION",{"signal_id":signal_id,"symbol":symbol,"strategy":"baseline_trend",
+                                                       "regime":regime,"signal":signal,"risk_decision":risk_decision,
+                                                       "rejected":True,"reason":reason})
                     snapshot(conn,prices)
                     conn.commit()
                     return send(self,200,status_payload(conn))
 
                 if action=="test_order":
                     state=get_state(conn)
-                    if not state: return send(self,409,{"ok":False,"error":"initialize PAPER mode first"})
-                    if state[9]: return send(self,409,{"ok":False,"error":"HALT NEW ORDERS is active"})
+                    if not state:
+                        return send(self,409,{"ok":False,"error":"initialize PAPER mode first"})
+                    if state[9]:
+                        return send(self,409,{"ok":False,"error":"HALT NEW ORDERS is active"})
                     symbol=str(data.get("symbol",state[13]))
                     side=str(data.get("side","buy")).lower()
                     exchange_id=str(state[12])
                     timeframe=str(state[14])
                     if symbol != str(state[13]):
                         return send(self,400,{"ok":False,"error":"paper session symbol is fixed; reset and initialize with the desired symbol"})
-                    if side not in {"buy","sell"}: return send(self,400,{"ok":False,"error":"side must be buy or sell"})
+                    if side not in {"buy","sell"}:
+                        return send(self,400,{"ok":False,"error":"side must be buy or sell"})
                     if bool(state[11]):
                         return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
                     prices=fetch_prices(exchange_id,[symbol],timeframe)
                     price=prices[symbol]
                     rows=fetch_candles(exchange_id,symbol,timeframe)
-                    _,_,_,atr,_=indicators(rows)
-                    state_values=equity(conn,prices)
-                    eq=state_values[0] if state_values else D(str(state[2]))
+                    _,e9,e21,atr,rsi=indicators(rows)
+                    values=equity(conn,prices)
+                    eq=values[0] if values else D(str(state[2]))
                     risk=size_for_risk(eq,price,atr,PaperLimits(),side)
                     qty=D(str(data.get("quantity",risk.quantity)))
-                    if qty<=0: return send(self,400,{"ok":False,"error":"quantity must be positive"})
-                    # This is an explicit PAPER execution harness, not a strategy signal.
+                    if qty<=0:
+                        return send(self,400,{"ok":False,"error":"quantity must be positive"})
                     positions=fetch_positions(conn)
-                    proposed_risk=size_for_risk(eq,price,atr,PaperLimits(),side)
                     limits=PaperLimits()
-                    if qty*price > eq*limits.max_strategy_allocation:
+                    proposed_notional=qty*price
+                    if proposed_notional > eq*limits.max_strategy_allocation:
                         return send(self,409,{"ok":False,"error":"strategy allocation cap exceeded"})
-                    allowed,reason=check_portfolio_risk(eq,positions,proposed_risk,limits,state_values[4] if state_values else D(0),D(str(state[7])),proposed_notional=qty*price)
-                    if not allowed: return send(self,409,{"ok":False,"error":reason})
+                    allowed,reason=check_portfolio_risk(eq,positions,risk,limits,values[4] if values else D(0),D(str(state[7])),proposed_notional=proposed_notional)
+                    signal_id="signal-"+uuid.uuid4().hex
+                    regime="trend_up" if e9[-1]>e21[-1] else "range"
+                    open_risk=D(0)
+                    for p in positions:
+                        raw=conn.execute("SELECT COALESCE(risk_at_entry,0) FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s",(p.symbol,)).fetchone()
+                        open_risk += D(str(raw[0] or 0))
+                    if not allowed:
+                        record_decision(conn,state,signal_id=signal_id,strategy="PAPER_TEST_HARNESS",regime=regime,
+                                        signal_timestamp=now(),signal_direction=side.upper(),ema9=e9[-1],ema21=e21[-1],rsi=rsi,atr=atr,
+                                        risk_per_trade=limits.risk_per_trade,aggregate_open_risk=open_risk,
+                                        open_positions=len(positions),daily_loss=values[4] if values else D(0),
+                                        drawdown=values[3] if values else D(0),gross_exposure=values[2] if values else D(0),
+                                        allocation=D(0) if eq<=0 else proposed_notional/eq,risk_decision="REJECTED",
+                                        rejected=True,rejection_reason=reason)
+                        event(conn,"PAPER_ORDER_REJECTED",{"signal_id":signal_id,"symbol":symbol,"side":side,"reason":reason})
+                        conn.commit()
+                        return send(self,409,{"ok":False,"error":reason,"rejected":True,"signal_id":signal_id})
                     oid="paper-"+uuid.uuid4().hex
-                    t=now()
+                    signal_time=now()
                     slip=price*D("0.0005")
                     fill_price=price+slip if side=="buy" else price-slip
                     fee=fill_price*qty*D("0.001")
-                    conn.execute("INSERT INTO zerqen_paper_orders(client_order_id,account_id,symbol,side,order_type,quantity,price,status,filled_quantity,average_price,strategy,regime,reason,created_at,updated_at) VALUES(%s,'default',%s,%s,'market',%s,%s,'NEW',0,NULL,'PAPER_TEST_HARNESS','TEST','explicit operator execution test',%s,%s)",(oid,symbol,side,qty,price,t,t))
+                    fill_id=str(uuid.uuid4())
+                    conn.execute("INSERT INTO zerqen_paper_orders(client_order_id,account_id,symbol,side,order_type,quantity,price,stop_price,target_price,status,filled_quantity,average_price,strategy,regime,reason,created_at,updated_at,timeframe,risk_at_entry,opening_equity,signal_id,exchange_id) VALUES(%s,'default',%s,%s,'market',%s,%s,%s,%s,'NEW',0,NULL,'PAPER_TEST_HARNESS',%s,'explicit operator execution test',%s,%s,%s,%s,%s,%s,%s)",
+                                  (oid,symbol,side,qty,price,risk.stop_price,risk.target_price,regime,signal_time,signal_time,timeframe,risk.risk_amount,eq,signal_id,exchange_id))
                     conn.execute("UPDATE zerqen_paper_orders SET status='SUBMITTED',updated_at=%s WHERE client_order_id=%s",(now(),oid))
                     conn.execute("UPDATE zerqen_paper_orders SET status='ACKNOWLEDGED',updated_at=%s WHERE client_order_id=%s",(now(),oid))
-                    conn.execute("INSERT INTO zerqen_paper_fills(fill_id,client_order_id,account_id,symbol,side,quantity,price,fee,funding,slippage,created_at) VALUES(%s,%s,'default',%s,%s,%s,%s,%s,0,%s,%s)",(str(uuid.uuid4()),oid,symbol,side,qty,fill_price,fee,slip*qty,t))
-                    realized=D(0)
+                    conn.execute("INSERT INTO zerqen_paper_fills(fill_id,client_order_id,account_id,symbol,side,quantity,price,requested_price,fee,funding,slippage,created_at) VALUES(%s,%s,'default',%s,%s,%s,%s,%s,%s,0,%s,%s)",
+                                  (fill_id,oid,symbol,side,qty,fill_price,price,fee,slip*qty,signal_time))
+                    existing_raw=conn.execute("""SELECT side,quantity,average_entry,fees,funding,realized_pnl,stop_price,target_price,
+                                                       entry_order_id,entry_fill_id,opened_at,strategy,regime,risk_at_entry,opening_equity
+                                                FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s""",(symbol,)).fetchone()
                     existing=next((p for p in positions if p.symbol==symbol),None)
+                    realized=D(0)
+                    closing_trade=None
                     if existing:
                         newpos,realized=apply_fill(existing,side,qty,fill_price,fee,D(0))
                         if newpos:
-                            conn.execute("UPDATE zerqen_paper_positions SET side=%s,quantity=%s,average_entry=%s,fees=fees+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default' AND symbol=%s",(newpos.side,newpos.quantity,newpos.average_entry,fee,realized,now(),symbol))
+                            conn.execute("""UPDATE zerqen_paper_positions SET side=%s,quantity=%s,average_entry=%s,fees=fees+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default' AND symbol=%s""",
+                                         (newpos.side,newpos.quantity,newpos.average_entry,fee,realized,now(),symbol))
                         else:
                             conn.execute("DELETE FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s",(symbol,))
+                        if existing_raw and side != existing_raw[0]:
+                            entry_side=str(existing_raw[0])
+                            entry_qty=D(str(existing_raw[1]))
+                            close_qty=min(entry_qty,qty)
+                            direction=D("1") if entry_side=="buy" else D("-1")
+                            gross_pnl=(fill_price-D(str(existing_raw[2])))*close_qty*direction
+                            entry_fee=D(str(existing_raw[3]))*(close_qty/entry_qty) if entry_qty else D(0)
+                            entry_funding=D(str(existing_raw[4]))*(close_qty/entry_qty) if entry_qty else D(0)
+                            entry_fill=conn.execute("SELECT fill_id,slippage,created_at,price FROM zerqen_paper_fills WHERE fill_id=%s",(existing_raw[9],)).fetchone() if existing_raw[9] else None
+                            entry_slip=D(str(entry_fill[1] or 0)) if entry_fill else D(0)
+                            total_fees=entry_fee+fee
+                            total_slippage=entry_slip+D(str(slip*close_qty))
+                            net_pnl=gross_pnl-total_fees-entry_funding-total_slippage
+                            r_mult=net_pnl/D(str(existing_raw[13])) if existing_raw[13] and D(str(existing_raw[13]))>0 else D(0)
+                            trade_id="trade-"+uuid.uuid4().hex
+                            exit_time=now()
+                            duration=int((exit_time-existing_raw[10]).total_seconds()) if existing_raw[10] else None
+                            closing_trade=(trade_id,signal_id,existing_raw[8],oid,existing_raw[9],fill_id,exchange_id,symbol,timeframe,entry_side,
+                                           existing_raw[11],existing_raw[12],None,existing_raw[10] or exit_time,exit_time,D(str(existing_raw[2])),
+                                           fill_price,close_qty,existing_raw[6],existing_raw[7],existing_raw[13],gross_pnl,total_fees,total_slippage,
+                                           entry_funding,net_pnl,r_mult,existing_raw[14] or eq,eq,"CLOSED",duration)
                     else:
-                        conn.execute("INSERT INTO zerqen_paper_positions(account_id,symbol,side,quantity,average_entry,fees,funding,realized_pnl,updated_at) VALUES('default',%s,%s,%s,%s,%s,0,0,%s)",(symbol,side,qty,fill_price,fee,now()))
+                        conn.execute("""INSERT INTO zerqen_paper_positions(account_id,symbol,side,quantity,average_entry,stop_price,target_price,fees,funding,realized_pnl,entry_order_id,entry_fill_id,opened_at,strategy,regime,risk_at_entry,opening_equity,updated_at)
+                                        VALUES('default',%s,%s,%s,%s,%s,%s,%s,0,0,%s,%s,%s,'PAPER_TEST_HARNESS',%s,%s,%s,%s)""",
+                                     (symbol,side,qty,fill_price,risk.stop_price,risk.target_price,fee,oid,fill_id,signal_time,regime,risk.risk_amount,eq,signal_time))
+                    if closing_trade:
+                        conn.execute("""INSERT INTO zerqen_paper_trades(trade_id,signal_id,entry_order_id,exit_order_id,entry_fill_id,exit_fill_id,exchange_id,symbol,timeframe,side,strategy,regime,signal_timestamp,entry_timestamp,exit_timestamp,entry_price,exit_price,quantity,stop_price,target_price,risk_at_entry,gross_pnl,fees,slippage,funding,net_pnl,r_multiple,opening_equity,closing_equity,status,duration_seconds)
+                                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",closing_trade)
                     conn.execute("UPDATE zerqen_paper_orders SET status='FILLED',filled_quantity=%s,average_price=%s,updated_at=%s WHERE client_order_id=%s",(qty,fill_price,now(),oid))
-                    cash_delta = (-fill_price * qty - fee) if side == "buy" else (fill_price * qty - fee)
+                    cash_delta=(-fill_price*qty-fee) if side=="buy" else (fill_price*qty-fee)
                     conn.execute("UPDATE zerqen_paper_state SET cash=cash+%s,fees=fees+%s,slippage=slippage+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default'",(cash_delta,fee,slip*qty,realized,now()))
-                    event(conn,"PAPER_ORDER_FILLED",{"client_order_id":oid,"symbol":symbol,"side":side,"quantity":str(qty),"price":str(fill_price),"fee":str(fee),"slippage":str(slip*qty)})
-                    snapshot(conn,prices)
+                    record_decision(conn,state,signal_id=signal_id,strategy="PAPER_TEST_HARNESS",regime=regime,signal_timestamp=signal_time,
+                                    signal_direction=side.upper(),ema9=e9[-1],ema21=e21[-1],rsi=rsi,atr=atr,
+                                    risk_per_trade=limits.risk_per_trade,aggregate_open_risk=open_risk,open_positions=len(positions),
+                                    daily_loss=values[4] if values else D(0),drawdown=values[3] if values else D(0),
+                                    gross_exposure=values[2] if values else D(0),allocation=D(0) if eq<=0 else proposed_notional/eq,
+                                    risk_decision="APPROVED",rejected=False,order_id=oid)
+                    event(conn,"PAPER_ORDER_FILLED",{"client_order_id":oid,"signal_id":signal_id,"symbol":symbol,"side":side,
+                                                     "quantity":str(qty),"price":str(fill_price),"fee":str(fee),"slippage":str(slip*qty)})
+                    post_prices=fetch_prices(exchange_id,[symbol],timeframe)
+                    snapshot_values=snapshot(conn,post_prices)
+                    if closing_trade and snapshot_values:
+                        conn.execute("UPDATE zerqen_paper_trades SET closing_equity=%s WHERE trade_id=%s",(snapshot_values[0],closing_trade[0]))
                     conn.commit()
                     return send(self,200,status_payload(conn))
 
