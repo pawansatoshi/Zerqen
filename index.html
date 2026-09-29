@@ -38,7 +38,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
 </header>
 
 <nav class="nav">
-  <button class="navbtn active" data-view="overview">Overview</button><button class="navbtn" data-view="paper">Paper Demo</button><button class="navbtn" data-view="markets">Markets</button><button class="navbtn" data-view="positions">Positions</button><button class="navbtn" data-view="orders">Orders</button><button class="navbtn" data-view="performance">Performance</button><button class="navbtn" data-view="ledger">Trade Ledger</button><button class="navbtn" data-view="compounding">Compounding</button><button class="navbtn" data-view="audit">Audit Log</button><button class="navbtn" data-view="connections">Connections</button>
+  <button class="navbtn active" data-view="overview">Overview</button><button class="navbtn" data-view="paper">Paper Demo</button><button class="navbtn" data-view="backtest">Backtest</button><button class="navbtn" data-view="markets">Markets</button><button class="navbtn" data-view="positions">Positions</button><button class="navbtn" data-view="orders">Orders</button><button class="navbtn" data-view="performance">Performance</button><button class="navbtn" data-view="ledger">Trade Ledger</button><button class="navbtn" data-view="compounding">Compounding</button><button class="navbtn" data-view="audit">Audit Log</button><button class="navbtn" data-view="connections">Connections</button>
 </nav>
 
 <main>
@@ -131,6 +131,35 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
   <div class="section"><div class="section-head"><div><h2>Paper positions</h2><p>Authoritative server-side positions marked against real public prices</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg entry</th><th>Fees</th><th>Realized P&L</th></tr></thead><tbody id="paperPositions"><tr><td colspan="6" class="empty">No paper positions.</td></tr></tbody></table></div></div></div>
   <div class="section"><div class="section-head"><div><h2>Paper orders</h2><p>Durable order lifecycle</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Fill</th><th>Status</th><th>Strategy</th></tr></thead><tbody id="paperOrders"><tr><td colspan="7" class="empty">No paper orders.</td></tr></tbody></table></div></div></div>
   <div class="section"><div class="section-head"><div><h2>Decision log</h2><p>Why Zerqen traded—or refused to trade</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Event</th><th>Evidence</th></tr></thead><tbody id="paperEvents"><tr><td colspan="3" class="empty">No paper events.</td></tr></tbody></table></div></div></div>
+</section>
+<section id="backtest" class="view">
+  <div class="section-head"><div><h2>Historical Backtest</h2><p>Deterministic candle replay for SPOT and FUTURES. No real orders, no exchange credentials.</p></div><div><span class="badge">RESEARCH ONLY</span></div></div>
+  <div class="card small-card">
+    <div class="form">
+      <label>Market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px">
+        <select id="btMarket"><option value="spot">SPOT</option><option value="futures">FUTURES DEMO</option></select>
+        <input id="btSymbol" value="BTC/USDT" placeholder="BTC/USDT">
+        <select id="btTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select>
+        <select id="btLeverage"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="5">5x</option></select>
+        <input id="btCapital" type="number" min="1" step="0.01" value="10000" placeholder="Starting capital">
+      </div>
+      <div class="section-note">Spot runs unleveraged. Futures uses isolated-style simulated margin, liquidation protection, funding assumption, fees and slippage. Historical results are not forecasts.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="primary" onclick="runBacktest()">Run backtest</button><button class="secondary" onclick="compareBacktests()">Compare SPOT vs FUTURES</button></div>
+      <div id="btMessage" class="note">Ready. Use up to 1,000 historical candles per run.</div>
+    </div>
+  </div>
+  <div class="hero" style="margin-top:16px">
+    <div class="card hero-card"><div class="eyebrow">Final equity</div><div class="hero-value" id="btFinal">—</div><div class="return" id="btReturn">—</div>
+      <div class="mini-grid"><div class="metric"><label>Trades</label><strong id="btTrades">—</strong></div><div class="metric"><label>Win rate</label><strong id="btWinRate">—</strong></div><div class="metric"><label>Profit factor</label><strong id="btPF">—</strong></div><div class="metric"><label>Max drawdown</label><strong id="btDD">—</strong></div></div>
+    </div>
+    <div class="card status-card"><div><div class="status-head"><span class="eyebrow">Run</span><span class="live"><i class="dot"></i><span id="btState">READY</span></span></div><div class="engine" id="btMarketLabel">SPOT</div><div class="sub" id="btRange">—</div></div>
+      <div><div class="riskrow"><span>Fees</span><span id="btFees">—</span></div><div class="riskrow"><span>Funding</span><span id="btFunding">—</span></div><div class="riskrow"><span>Slippage</span><span id="btSlippage">—</span></div></div>
+    </div>
+  </div>
+  <div class="section"><div class="section-head"><div><h2>Recent simulated trades</h2><p>Entry, exit, reason and R multiple from the deterministic replay.</p></div></div>
+    <div class="card table-card"><div class="table-scroll"><table class="table" style="min-width:900px"><thead><tr><th>Entry</th><th>Exit</th><th>Side</th><th>Entry</th><th>Exit</th><th>Net P&L</th><th>Reason</th><th>R</th></tr></thead><tbody id="btTradesRows"><tr><td colspan="8" class="empty">No backtest run yet.</td></tr></tbody></table></div></div>
+  </div>
+  <div class="section"><div class="section-head"><div><h2>Backtest assumptions</h2><p>Explicit model assumptions, especially for futures funding.</p></div></div><div class="card small-card"><pre id="btAssumptions" style="white-space:pre-wrap;margin:0;color:var(--muted);font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace">Run a backtest to load assumptions.</pre></div></div>
 </section>
 <section id="markets" class="view">
   <div class="section-head"><div><h2>Markets</h2><p>Normalized backend public market data and deterministic signal evidence</p></div><div><span class="badge" id="marketDataState">CHECKING</span></div></div>
@@ -350,6 +379,46 @@ function setActiveTimeframe(tf){
 document.querySelectorAll("[data-tf]").forEach(b=>b.addEventListener("click",()=>setActiveTimeframe(b.dataset.tf)));
 document.querySelectorAll(".period").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".period").forEach(x=>x.classList.remove("active"));b.classList.add("active");toast("Verified portfolio history will populate this period")}));
 async function refreshAll(){toast("Refreshing live data…");await Promise.all([loadMarket(),loadHealth(),loadConnections()]);lastRefresh=Date.now();toast("Dashboard refreshed")}
+async function runBacktestFor(market){
+  const symbol=($("btSymbol").value||"BTC/USDT").trim().toUpperCase();
+  const timeframe=$("btTimeframe").value;
+  const capital=Number($("btCapital").value||10000);
+  const leverage=market==="spot"?1:Number($("btLeverage").value||2);
+  const qs=new URLSearchParams({market_type:market,symbol,timeframe,starting_capital:String(capital),leverage:String(leverage),limit:"1000"});
+  const r=await fetch("/api/backtest?"+qs.toString(),{cache:"no-store"});
+  const d=await r.json();
+  if(!r.ok||!d.ok) throw new Error(d.error||"backtest failed");
+  return d;
+}
+function renderBacktest(d){
+  $("btState").textContent="COMPLETE";
+  $("btMarketLabel").textContent=(d.market_type||"").toUpperCase()+" · "+d.symbol;
+  $("btRange").textContent=d.from+" → "+d.to+" · "+d.candles+" candles";
+  $("btFinal").textContent=displayMoney(d.final_equity);
+  $("btReturn").textContent=(d.return_pct>=0?"+":"")+fmt(d.return_pct,2)+"% net return";
+  $("btTrades").textContent=String(d.trades);
+  $("btWinRate").textContent=fmt(d.win_rate_pct,1)+"%";
+  $("btPF").textContent=Number.isFinite(d.profit_factor)?fmt(d.profit_factor,2):"∞";
+  $("btDD").textContent=fmt(d.max_drawdown_pct,2)+"%";
+  $("btFees").textContent=displayMoney(d.fees);
+  $("btFunding").textContent=displayMoney(d.funding);
+  $("btSlippage").textContent=displayMoney(d.slippage);
+  $("btAssumptions").textContent=JSON.stringify(d.assumptions,null,2)+"\n\n"+d.warning;
+  $("btTradesRows").innerHTML=(d.recent_trades||[]).slice().reverse().map(t=>"<tr><td>"+new Date(t.entry_time).toLocaleString()+"</td><td>"+new Date(t.exit_time).toLocaleString()+"</td><td>"+t.side+"</td><td>"+fmt(t.entry,6)+"</td><td>"+fmt(t.exit,6)+"</td><td class='"+(t.net_pnl>=0?"filled":"negative")+"'>"+(t.net_pnl>=0?"+":"")+fmt(t.net_pnl,4)+"</td><td>"+t.reason+"</td><td>"+fmt(t.r_multiple,2)+"R</td></tr>").join("")||"<tr><td colspan='8' class='empty'>No completed trades.</td></tr>";
+  return d;
+}
+async function runBacktest(){
+  $("btState").textContent="RUNNING"; $("btMessage").textContent="Fetching historical candles and replaying strategy…";
+  try{const d=await runBacktestFor($("btMarket").value);renderBacktest(d);$("btMessage").textContent="Backtest complete · "+d.candles+" candles replayed."}catch(e){$("btState").textContent="FAILED";$("btMessage").textContent=e.message||"backtest failed"}
+}
+async function compareBacktests(){
+  $("btState").textContent="RUNNING"; $("btMessage").textContent="Running identical parameters for Spot and Futures…";
+  try{
+    const spot=await runBacktestFor("spot"), fut=await runBacktestFor("futures");
+    renderBacktest(spot);
+    $("btMessage").textContent="Comparison complete · Spot "+fmt(spot.return_pct,2)+"% · Futures "+fmt(fut.return_pct,2)+"% · these are historical simulations, not a forecast.";
+  }catch(e){$("btState").textContent="FAILED";$("btMessage").textContent=e.message||"comparison failed"}
+}
 
 function selectExecutionMode(mode){
   executionMode=mode;
