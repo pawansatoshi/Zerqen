@@ -1,25 +1,34 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 from decimal import Decimal, ROUND_DOWN
 from typing import Iterable
 
 D = Decimal
-Q = lambda value: D(str(value))
+ZERO = D("0")
 CENT = D("0.01")
+RISK_PER_TRADE = D("0.005")
+AGGREGATE_OPEN_RISK = D("0.015")
+MAX_STRATEGY_ALLOCATION = D("0.60")
+MAX_GROSS_EXPOSURE = D("1.0")
+DAILY_LOSS = D("0.03")
+MAX_DRAWDOWN = D("0.20")
+STOP_ATR = D("1.5")
+TARGET_R = D("2.0")
 
 
 @dataclass(frozen=True)
 class PaperLimits:
-    risk_per_trade: Decimal = D("0.005")
-    aggregate_open_risk: Decimal = D("0.015")
+    risk_per_trade: Decimal = RISK_PER_TRADE
+    aggregate_open_risk: Decimal = AGGREGATE_OPEN_RISK
     max_positions: int = 3
-    max_strategy_allocation: Decimal = D("0.60")
-    max_gross_exposure: Decimal = D("1.0")
-    daily_loss: Decimal = D("0.03")
-    max_drawdown: Decimal = D("0.20")
-    stop_atr: Decimal = D("1.5")
-    target_r: Decimal = D("2.0")
+    max_strategy_allocation: Decimal = MAX_STRATEGY_ALLOCATION
+    max_gross_exposure: Decimal = MAX_GROSS_EXPOSURE
+    daily_loss: Decimal = DAILY_LOSS
+    max_drawdown: Decimal = MAX_DRAWDOWN
+    stop_atr: Decimal = STOP_ATR
+    target_r: Decimal = TARGET_R
 
 
 @dataclass(frozen=True)
@@ -38,9 +47,9 @@ class Position:
     side: str
     quantity: Decimal
     average_entry: Decimal
-    fees: Decimal = D("0")
-    funding: Decimal = D("0")
-    realized_pnl: Decimal = D("0")
+    fees: Decimal = ZERO
+    funding: Decimal = ZERO
+    realized_pnl: Decimal = ZERO
 
     @property
     def signed_quantity(self) -> Decimal:
@@ -110,8 +119,8 @@ def apply_fill(
     side: str,
     quantity: Decimal,
     price: Decimal,
-    fee: Decimal = D("0"),
-    funding: Decimal = D("0"),
+    fee: Decimal = ZERO,
+    funding: Decimal = ZERO,
 ) -> tuple[Position | None, Decimal]:
     if quantity <= 0 or price <= 0:
         raise ValueError("fill quantity and price must be positive")
