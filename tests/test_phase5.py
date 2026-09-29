@@ -1,4 +1,3 @@
-import pandas as pd
 import pytest
 
 from zerqen.allocation import allocate_by_score
