@@ -75,7 +75,7 @@ class handler(BaseHTTPRequestHandler):
                     for r in rows
                 ],
             })
-        except Exception:
+        except Exception:  # noqa: BLE001
             return send(self, 500, {"ok": False, "error": "credential service unavailable"})
 
     def do_POST(self):
@@ -130,5 +130,5 @@ class handler(BaseHTTPRequestHandler):
 
                 # Never return decrypted exchange credentials to the browser.\n                # Trusted server-side execution can decrypt them internally when needed.\n
             return send(self, 400, {"ok": False, "error": "unsupported action"})
-        except Exception:
+        except Exception:  # noqa: BLE001
             return send(self, 500, {"ok": False, "error": "credential service unavailable"})
