@@ -1,5 +1,11 @@
 from __future__ import annotations
-from enum import StrEnum
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
 
 class TradingMode(StrEnum):
     BACKTEST = "backtest"
