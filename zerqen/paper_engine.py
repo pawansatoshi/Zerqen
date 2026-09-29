@@ -15,6 +15,11 @@ DAILY_LOSS = D("0.03")
 MAX_DRAWDOWN = D("0.20")
 STOP_ATR = D("1.5")
 TARGET_R = D("2.0")
+DAILY_TARGET = D("0.08")
+MAX_STOP_DISTANCE = D("0.08")
+MAX_ATR_PCT = D("0.05")
+MAX_BAR_PCT = D("0.08")
+MIN_RR = D("2.0")
 
 
 @dataclass(frozen=True)
@@ -28,6 +33,11 @@ class PaperLimits:
     max_drawdown: Decimal = MAX_DRAWDOWN
     stop_atr: Decimal = STOP_ATR
     target_r: Decimal = TARGET_R
+    daily_target: Decimal = DAILY_TARGET
+    max_stop_distance: Decimal = MAX_STOP_DISTANCE
+    max_atr_pct: Decimal = MAX_ATR_PCT
+    max_bar_pct: Decimal = MAX_BAR_PCT
+    min_risk_reward: Decimal = MIN_RR
 
 
 @dataclass(frozen=True)
@@ -61,10 +71,18 @@ def size_for_risk(
     atr: Decimal,
     limits: PaperLimits,
     side: str = "buy",
+    structural_stop: Decimal | None = None,
 ) -> RiskResult:
     if equity <= 0 or entry <= 0 or atr <= 0:
         return RiskResult(False, "invalid market/risk inputs", D("0"), D("0"), D("0"), D("0"))
-    stop_distance = atr * limits.stop_atr
+    atr_distance = atr * limits.stop_atr
+    if structural_stop is not None and structural_stop > 0:
+        structural_distance = entry - structural_stop if side == "buy" else structural_stop - entry
+        stop_distance = max(atr_distance, structural_distance)
+    else:
+        stop_distance = atr_distance
+    if stop_distance <= 0 or stop_distance / entry > limits.max_stop_distance:
+        return RiskResult(False, "stop distance exceeds configured capital-protection limit", D("0"), equity * limits.risk_per_trade, D("0"), D("0"))
     if side == "buy":
         stop = entry - stop_distance
         target = entry + stop_distance * limits.target_r
@@ -179,3 +197,38 @@ def compounding_equity(starting_equity: Decimal, realized_net_pnl: Decimal) -> D
     if starting_equity < 0:
         raise ValueError("starting equity cannot be negative")
     return starting_equity + realized_net_pnl
+
+def volatility_profile(rows: list[list], lookback: int = 20) -> dict:
+    if len(rows) < max(15, lookback):
+        return {"ok": False, "reason": "insufficient candles"}
+    closes = [D(str(r[4])) for r in rows]
+    highs = [D(str(r[2])) for r in rows]
+    lows = [D(str(r[3])) for r in rows]
+    volumes = [D(str(r[5])) for r in rows]
+    price = closes[-1]
+    if price <= 0:
+        return {"ok": False, "reason": "invalid price"}
+    ranges = [(highs[i] - lows[i]) / closes[i] for i in range(max(1, len(rows)-lookback), len(rows))]
+    returns = [(closes[i] - closes[i-1]) / closes[i-1] for i in range(max(1, len(rows)-lookback+1), len(rows))]
+    atr_proxy = sum(highs[i]-lows[i] for i in range(max(0, len(rows)-14), len(rows))) / D(min(14, len(rows)))
+    atr_pct = atr_proxy / price
+    max_bar_pct = max((abs(x) for x in ranges), default=D(0))
+    avg_volume = sum(volumes[-lookback:]) / D(lookback)
+    volume_ratio = volumes[-1] / avg_volume if avg_volume > 0 else D(0)
+    realized = (sum(x*x for x in returns) / D(len(returns))).sqrt() if returns else D(0)
+    return {"ok": True, "atr_pct": atr_pct, "max_bar_pct": max_bar_pct, "realized_volatility": realized, "volume_ratio": volume_ratio}
+
+def classify_regime(closes: list[Decimal], ema9: list[Decimal], ema21: list[Decimal], rsi: Decimal) -> str:
+    if not closes or not ema9 or not ema21:
+        return "unknown"
+    if ema9[-1] > ema21[-1] and rsi >= D("50"):
+        return "trend_up"
+    if ema9[-1] < ema21[-1] and rsi <= D("50"):
+        return "trend_down"
+    return "range"
+
+def dynamic_structural_stop(rows: list[list], side: str, entry: Decimal, atr: Decimal, lookback: int = 10) -> Decimal:
+    lows = [D(str(r[3])) for r in rows[-lookback:]]
+    highs = [D(str(r[2])) for r in rows[-lookback:]]
+    buffer = atr * D("0.25")
+    return (min(lows) - buffer) if side == "buy" else (max(highs) + buffer)
