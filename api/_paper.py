@@ -432,7 +432,7 @@ def manage_protective_exits(conn, state, prices):
             stop_price,target_price,risk_at_entry,gross_pnl,fees,slippage,funding,net_pnl,r_multiple,
             opening_equity,closing_equity,status,duration_seconds
         ) VALUES(%s,'default',%s,%s,NULL,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (trade_id,decision_id,raw[0],"auto-exit-"+uuid.uuid4().hex,raw[8],oid,raw[9],fid,state[12],p.symbol,state[14],p.side,raw[11],raw[12],t,raw[10] or t,entry_price,fill_price,qty,stop,target,risk_at_entry,gross,D(str(raw[6]))+fee,entry_slippage+slip_per_unit*qty,D(str(raw[7])),net,r_mult,D(str(raw[14] or state[8])),D(str(state[2])),"CLOSED",duration))
+        (trade_id,decision_id,raw[0],"auto-exit-"+uuid.uuid4().hex,raw[8],oid,raw[9],fid,state[12],p.symbol,state[14],p.side,raw[11],raw[12],t,raw[10] or t,t,entry_price,fill_price,qty,stop,target,risk_at_entry,gross,D(str(raw[6]))+fee,entry_slippage+slip_per_unit*qty,D(str(raw[7])),net,r_mult,D(str(raw[14] or state[8])),D(str(state[2])),"CLOSED",duration))
         event(conn,"PROTECTIVE_EXIT_FILLED",{"symbol":p.symbol,"reason":reason,"side":p.side,"quantity":str(qty),"price":str(fill_price),"net_pnl":str(net)})
         closed.append({"symbol":p.symbol,"reason":reason,"net_pnl":str(net)})
     return closed
