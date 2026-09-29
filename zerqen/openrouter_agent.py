@@ -30,7 +30,7 @@ class FreeModelRegistry:
     def _price(value: Any):
         try:
             return Decimal(value)
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
     @classmethod
