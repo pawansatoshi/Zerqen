@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import uuid
 from decimal import Decimal as D
 from http.server import BaseHTTPRequestHandler
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 
 from zerqen.paper_engine import PaperLimits, Position, apply_fill, check_portfolio_risk, size_for_risk
 from zerqen.strategy_registry import eligible_strategies
@@ -197,7 +195,6 @@ def equity(conn, prices):
     if not state:
         return None
     cash = D(str(state[2]))
-    realized = D(str(state[3]))
     unrealized = D("0")
     gross = D("0")
     for p in fetch_positions(conn):
@@ -421,8 +418,7 @@ class handler(BaseHTTPRequestHandler):
                         else:
                             conn.execute("DELETE FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s",(symbol,))
                     else:
-                        pos=Position(symbol,side,qty,fill_price,fee,D("0"),D("0"))
-                        conn.execute("INSERT INTO zerqen_paper_positions(account_id,symbol,side,quantity,average_entry,fees,funding,realized_pnl,updated_at) VALUES('default',%s,%s,%s,%s,%s,0,0,%s)",(symbol,side,qty,fill_price,fee,now()))
+                                        conn.execute("INSERT INTO zerqen_paper_positions(account_id,symbol,side,quantity,average_entry,fees,funding,realized_pnl,updated_at) VALUES('default',%s,%s,%s,%s,%s,0,0,%s)",(symbol,side,qty,fill_price,fee,now()))
                         realized=D("0")
                     conn.execute("UPDATE zerqen_paper_orders SET status='FILLED',filled_quantity=%s,average_price=%s,updated_at=%s WHERE client_order_id=%s",(qty,fill_price,now(),oid))
                     conn.execute("UPDATE zerqen_paper_state SET fees=fees+%s,slippage=slippage+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default'",(fee,slip*qty,realized,now()))
