@@ -664,6 +664,26 @@ class handler(BaseHTTPRequestHandler):
                         direction_ok=(side=="buy" and regime=="trend_up" and rsi>=D(50)) or (side=="sell" and regime=="trend_down" and rsi<=D(50))
                         if not direction_ok:
                             return send(self,409,{"ok":False,"error":"scanner signal failed server-side direction revalidation"})
+                        if os.getenv("OPENROUTER_API_KEY"):
+                            try:
+                                ai_result=evaluate_setup({
+                                    "symbol":symbol,"timeframe":timeframe,"price":str(price),"signal":side.upper(),
+                                    "regime":regime,"ema9":str(e9[-1]),"ema21":str(e21[-1]),"rsi":str(rsi),
+                                    "atr":str(atr),"atr_pct":str(vol.get("atr_pct")),"max_bar_pct":str(vol.get("max_bar_pct")),
+                                    "volatility_ok":bool(vol.get("ok")),"equity":str(eq if 'eq' in locals() else D(str(state[2]))),
+                                    "risk_per_trade":str(PaperLimits().risk_per_trade),
+                                    "max_stop_distance":str(PaperLimits().max_stop_distance),
+                                    "min_risk_reward":str(PaperLimits().min_risk_reward),
+                                })
+                                min_conf=float(os.getenv("ZERQEN_AI_MIN_CONFIDENCE","0.60"))
+                                if (str(ai_result.get("decision","HOLD")).upper()!=side.upper()
+                                    or float(ai_result.get("confidence",0))<min_conf
+                                    or ai_result.get("risk_flags")):
+                                    return send(self,409,{"ok":False,"error":"AI gate rejected scanner setup","ai":ai_result})
+                            except FreeOnlyViolation:
+                                return send(self,409,{"ok":False,"error":"AI free-only safety violation"})
+                            except Exception as exc:  # noqa: BLE001
+                                return send(self,409,{"ok":False,"error":"AI gate unavailable","detail":str(exc)[:200]})
                     structural_stop=dynamic_structural_stop(rows,side,price,atr)
                     values=equity(conn,prices)
                     eq=values[0] if values else D(str(state[2]))
