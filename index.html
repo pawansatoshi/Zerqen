@@ -303,7 +303,7 @@ async function loadHealth(){
 async function loadMarket(){
   const tf=currentTimeframe;
   try{
-    const res=await fetch("/api/market?exchange=okx&symbol=BTC%2FUSDT&timeframe="+encodeURIComponent(tf)+"&limit=120",{cache:"no-store"});
+    const res=await fetch("/api/market?exchange=binance&symbol=BTC%2FUSDT&timeframe="+encodeURIComponent(tf)+"&limit=120",{cache:"no-store"});
     const d=await res.json();
     if(!d.ok || !d.closes?.length){
       marketData=null;
