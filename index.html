@@ -660,7 +660,7 @@ async function exportLedger(format){if(!token()){toast("Dashboard token required
 selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
 setInterval(loadMarket,30000);
-setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(refreshAIStatus,300000);refreshAIStatus();
+setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);refreshAIStatus();refreshMarketIntelligence();
 setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
 
 </script>
