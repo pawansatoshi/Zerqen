@@ -302,7 +302,7 @@ def scanner(
             atr_pct=(sum(tr[-14:])/max(len(tr[-14:]),1))/closes[-1]
             max_bar_pct=max(((highs[i]-lows[i])/closes[i] for i in range(max(1,len(closes)-20),len(closes))),default=0)
             volatility_ok=atr_pct<=0.05 and max_bar_pct<=0.08
-            liquidity_ok=True
+            liquidity_ok=0.5<=volratio<=3.0
             momentum=(closes[-1]/closes[-6]-1)*100
             avgvol=sum(vols[-21:-1])/max(len(vols[-21:-1]),1); volratio=vols[-1]/avgvol if avgvol else 0
             trend=1 if e9[-1]>e21[-1] else -1
