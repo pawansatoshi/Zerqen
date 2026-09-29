@@ -156,6 +156,7 @@ def apply_fill(
     if remaining == 0:
         if closing == original_qty:
             return None, realized
+        position.quantity = original_qty - closing
         return position, realized
     new_side = "buy" if signed > 0 else "sell"
     return Position(
