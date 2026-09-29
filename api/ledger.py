@@ -296,10 +296,19 @@ def trade_detail(trade_id: str, x_zerqen_dashboard_token: str | None = Header(de
         if not row: raise HTTPException(404,"trade not found")
         trade=_trade_dict(row)
         decision=conn.execute("SELECT * FROM zerqen_paper_decisions WHERE signal_id=%s ORDER BY signal_timestamp DESC LIMIT 1",(trade["signal_id"],)).fetchone()
+        entry_fill=conn.execute("SELECT fill_id,client_order_id,requested_price,price,quantity,fee,slippage,created_at FROM zerqen_paper_fills WHERE fill_id=%s",(trade["entry_fill_id"],)).fetchone()
+        exit_fill=conn.execute("SELECT fill_id,client_order_id,requested_price,price,quantity,fee,slippage,created_at FROM zerqen_paper_fills WHERE fill_id=%s",(trade["exit_fill_id"],)).fetchone()
         events=conn.execute("""SELECT event_id,event_type,payload,created_at FROM zerqen_paper_events
                                WHERE account_id='default' AND created_at BETWEEN %s AND %s ORDER BY created_at""",
                             (row[13],row[14])).fetchall()
-        return {"ok":True,"trade":trade,"risk_decision":dict(zip([d.name for d in conn.execute("SELECT * FROM zerqen_paper_decisions WHERE signal_id=%s LIMIT 1",(trade["signal_id"],)).description],decision)) if decision else None,
+        def fill_payload(row):
+            if not row:
+                return None
+            return {"fill_id":row[0],"order_id":row[1],"requested_price":float(row[2]) if row[2] is not None else None,
+                    "actual_price":float(row[3]),"quantity":float(row[4]),"fee":float(row[5]),"slippage":float(row[6]),"created_at":_iso(row[7])}
+        return {"ok":True,"trade":trade,
+                "risk_decision":dict(zip([d.name for d in conn.execute("SELECT * FROM zerqen_paper_decisions WHERE signal_id=%s LIMIT 1",(trade["signal_id"],)).description],decision)) if decision else None,
+                "entry_fill":fill_payload(entry_fill),"exit_fill":fill_payload(exit_fill),
                 "audit_events":[{"event_id":e[0],"event_type":e[1],"payload":e[2],"created_at":_iso(e[3])} for e in events]}
 
 
