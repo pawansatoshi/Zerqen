@@ -129,6 +129,8 @@ def db():
             created_at TIMESTAMPTZ NOT NULL
         )
     """)
+    from api.ledger import _ensure_schema
+    _ensure_schema(conn)
     conn.commit()
     return conn
 
@@ -234,9 +236,12 @@ def snapshot(conn, prices):
         return None
     eq, unrealized, gross, dd, daily = values
     t = now()
+    open_risk = sum((D(str(p.risk_at_entry)) if getattr(p, "risk_at_entry", None) else D(0)) for p in fetch_positions(conn))
+    allocation = D(0) if eq <= 0 else gross / eq
+    cumulative = eq - D(str(state[1]))
     conn.execute(
-        "INSERT INTO zerqen_paper_equity_snapshots(account_id,equity,cash,realized_pnl,unrealized_pnl,drawdown,daily_pnl,created_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s)",
-        (eq, D(str(state[2])), D(str(state[3])), unrealized, dd, daily, t),
+        "INSERT INTO zerqen_paper_equity_snapshots(account_id,equity,cash,realized_pnl,unrealized_pnl,drawdown,daily_pnl,gross_exposure,open_risk,allocation,cumulative_pnl,created_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (eq, D(str(state[2])), D(str(state[3])), unrealized, dd, daily, gross, open_risk, allocation, cumulative, t),
     )
     conn.execute(
         "UPDATE zerqen_paper_state SET peak_equity=GREATEST(peak_equity,%s),last_marked_at=%s,updated_at=%s WHERE account_id='default'",
@@ -307,6 +312,14 @@ def status_payload(conn):
     }
 
 
+def record_decision(conn, state, *, signal_id, strategy, regime, signal_timestamp, signal_direction, ema9, ema21, rsi, atr, risk_per_trade, aggregate_open_risk, open_positions, daily_loss, drawdown, gross_exposure, allocation, risk_decision, rejected, rejection_reason=None, order_id=None):
+    conn.execute(
+        """INSERT INTO zerqen_paper_decisions(decision_id,account_id,signal_id,exchange_id,symbol,timeframe,strategy,regime,signal_timestamp,signal_direction,ema9,ema21,rsi,atr,risk_per_trade,aggregate_open_risk,open_positions,daily_loss,drawdown,gross_exposure,allocation,risk_decision,rejected,rejection_reason,order_id)
+        VALUES(%s,'default',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (str(uuid.uuid4()),signal_id,str(state[12]),str(state[13]),str(state[14]),strategy,regime,signal_timestamp,signal_direction,ema9,ema21,rsi,atr,risk_per_trade,aggregate_open_risk,open_positions,daily_loss,drawdown,gross_exposure,allocation,risk_decision,rejected,rejection_reason,order_id),
+    )
+
+
 def event(conn, event_type, payload):
     conn.execute(
         "INSERT INTO zerqen_paper_events(event_id,account_id,event_type,payload,created_at) VALUES(%s,'default',%s,%s,%s)",
@@ -350,6 +363,7 @@ class handler(BaseHTTPRequestHandler):
                     fetch_public_market(exchange_id, symbol, timeframe, 60)
                     conn.execute("INSERT INTO zerqen_paper_state(account_id,starting_equity,cash,peak_equity,day_start_equity,exchange_id,symbol,timeframe,updated_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s,%s)",(capital,capital,capital,capital,exchange_id,symbol,timeframe,t))
                     event(conn,"PAPER_INITIALIZED",{"starting_capital":str(capital),"exchange_id":exchange_id,"symbol":symbol,"timeframe":timeframe})
+                    snapshot(conn,{symbol: fetch_public_market(exchange_id,symbol,timeframe,20)[0]})
                     conn.commit()
                     return send(self,200,status_payload(conn))
 
