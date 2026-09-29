@@ -523,7 +523,7 @@ async function takeScannerTrade(symbol,side,silent=false){
     if(ed.ok){playAlert(side);$("paperMessage").textContent="DEMO "+side+" filled on "+symbol+" · simulated only";if(!silent)toast("DEMO "+side+" filled · "+symbol)}
   }else if(!silent)toast("Setup selected but risk/strategy gate did not approve "+symbol);
 }
-async function paperInitialize(){const capital=$("paperCapital").value;displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Paper account initialized":"Initialization failed")}
+async function paperInitialize(){const capital=$("paperCapital").value;displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();renderPaper(d);await loadLedger();const msg=d.ok?"Paper account initialized":"Initialization failed: "+(d.error||("HTTP "+r.status));$("paperMessage").textContent=msg;toast(msg)}catch(e){const msg="Initialization failed: "+(e.message||"network error");$("paperMessage").textContent=msg;toast(msg)}}
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
   const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
