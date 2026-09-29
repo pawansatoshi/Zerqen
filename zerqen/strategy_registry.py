@@ -46,3 +46,38 @@ def default_registry() -> StrategyRegistry:
     registry.register("mean_reversion", mean_reversion_strategy, "RSI recovery from an oversold condition")
     registry.register("breakout", breakout_strategy, "Prior-range breakout with volume confirmation")
     return registry
+
+
+from enum import StrEnum
+
+
+class StrategyStatus(StrEnum):
+    VALIDATED = "VALIDATED"
+    DEGRADED = "DEGRADED"
+    DISABLED = "DISABLED"
+    INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
+
+
+@dataclass(frozen=True)
+class StrategyEvidence:
+    strategy_id: str
+    status: StrategyStatus = StrategyStatus.INSUFFICIENT_DATA
+    regime_labels: tuple[str, ...] = ()
+    score: float | None = None
+    evidence_ref: str | None = None
+
+
+DEFAULT_EVIDENCE = (
+    StrategyEvidence("trend", StrategyStatus.INSUFFICIENT_DATA, ("trend_up", "trend_down", "breakout")),
+    StrategyEvidence("momentum", StrategyStatus.INSUFFICIENT_DATA, ("trend_up", "trend_down")),
+    StrategyEvidence("mean_reversion", StrategyStatus.INSUFFICIENT_DATA, ("range", "low_volatility")),
+    StrategyEvidence("breakout", StrategyStatus.INSUFFICIENT_DATA, ("breakout", "high_volatility")),
+)
+
+
+def eligible_strategies(regime: str | None = None, evidence=DEFAULT_EVIDENCE) -> tuple[StrategyEvidence, ...]:
+    return tuple(
+        item for item in evidence
+        if item.status == StrategyStatus.VALIDATED
+        and (regime is None or regime in item.regime_labels)
+    )
