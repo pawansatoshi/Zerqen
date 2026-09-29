@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar
 from decimal import Decimal, ROUND_DOWN
 from typing import Iterable
 
