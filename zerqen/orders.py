@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import ClassVar
 from enum import StrEnum
 
 
@@ -43,7 +44,7 @@ class OrderEvent:
 
 
 class OrderStateMachine:
-    _allowed = {
+    _allowed: ClassVar[dict[OrderStatus, set[OrderStatus]]] = {
         OrderStatus.CREATED: {OrderStatus.RISK_CHECK, OrderStatus.REJECTED, OrderStatus.FAILED},
         OrderStatus.RISK_CHECK: {OrderStatus.APPROVED, OrderStatus.REJECTED},
         OrderStatus.APPROVED: {OrderStatus.SUBMITTED, OrderStatus.REJECTED, OrderStatus.FAILED},
