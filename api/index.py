@@ -242,6 +242,82 @@ def market(
         return safe_error("market data temporarily unavailable")
 
 
+@app.get("/api/fx")
+def fx(base: str = Query("USD"), quote: str = Query("INR")):
+    if base == quote:
+        return {"ok": True, "base": base, "quote": quote, "rate": 1.0}
+    if {base, quote} != {"USD", "INR"}:
+        raise HTTPException(400, "only USD/INR display conversion is supported")
+    try:
+        import urllib.request
+        url = "https://api.frankfurter.app/latest?from=USD&to=INR"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            payload = json.loads(response.read().decode())
+        rate = float(payload["rates"]["INR"])
+        return {"ok": True, "base": "USD", "quote": "INR", "rate": rate, "source": "Frankfurter"}
+    except Exception as exc:  # noqa: BLE001
+        return safe_error("live USD/INR conversion temporarily unavailable")
+
+@app.get("/api/scanner")
+def scanner(
+    exchange: str = Query("binance"),
+    quote: str = Query("USDT"),
+    limit: int = Query(50, ge=10, le=50),
+    timeframe: str = Query("1h"),
+):
+    if exchange != "binance":
+        raise HTTPException(400, "top-50 scanner currently uses Binance public liquidity feed")
+    if quote.upper() != "USDT":
+        raise HTTPException(400, "scanner quote must be USDT")
+    if timeframe not in {"1h", "4h", "1d"}:
+        raise HTTPException(400, "unsupported scanner timeframe")
+    try:
+        import urllib.parse, urllib.request
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        info = json.loads(urllib.request.urlopen("https://api.binance.com/api/v3/exchangeInfo", timeout=8).read().decode())
+        markets = {str(m.get("symbol","")).upper(): m for m in info.get("symbols", []) if m.get("status")=="TRADING" and m.get("quoteAsset")=="USDT" and m.get("isSpotTradingAllowed", True)}
+        tickers = json.loads(urllib.request.urlopen("https://api.binance.com/api/v3/ticker/24hr", timeout=8).read().decode())
+        ranked = sorted((t for t in tickers if str(t.get("symbol","")).upper() in markets), key=lambda t: float(t.get("quoteVolume") or 0), reverse=True)[:limit]
+        interval=timeframe
+        def analyze(t):
+            symbol=str(t["symbol"]).upper()
+            q={"symbol":symbol,"interval":interval,"limit":80}
+            url="https://api.binance.com/api/v3/klines?"+urllib.parse.urlencode(q)
+            rows=json.loads(urllib.request.urlopen(url, timeout=6).read().decode())
+            if len(rows)<30: return None
+            closes=[float(r[4]) for r in rows]; vols=[float(r[5]) for r in rows]
+            def ema(values,p):
+                k=2/(p+1); out=[]; v=values[0]
+                for x in values: v=x if not out else x*k+v*(1-k); out.append(v)
+                return out
+            e9,e21=ema(closes,9),ema(closes,21)
+            gains=[];losses=[]
+            for i in range(max(1,len(closes)-14),len(closes)):
+                ch=closes[i]-closes[i-1];gains.append(max(ch,0));losses.append(max(-ch,0))
+            ag=sum(gains)/max(len(gains),1); al=sum(losses)/max(len(losses),1); rsi=100 if al==0 else 100-100/(1+ag/al)
+            momentum=(closes[-1]/closes[-6]-1)*100
+            avgvol=sum(vols[-21:-1])/max(len(vols[-21:-1]),1); volratio=vols[-1]/avgvol if avgvol else 0
+            trend=1 if e9[-1]>e21[-1] else -1
+            momentum_score=max(0,min(25,50+momentum*4)) if trend>0 else max(0,min(25,50-momentum*4))
+            rsi_score=max(0,25-abs(rsi-(60 if trend>0 else 40))*0.9)
+            trend_score=min(25,abs(e9[-1]-e21[-1])/closes[-1]*100*18)
+            volume_score=min(25,max(0,(volratio-0.5)*25))
+            score=round(min(100,trend_score+momentum_score+rsi_score+volume_score),1)
+            side="BUY" if trend>0 and 50<=rsi<=72 and momentum>0 else ("SELL" if trend<0 and 28<=rsi<=50 and momentum<0 else "WATCH")
+            return {"symbol":symbol.replace("USDT","/USDT"),"price":closes[-1],"change24h":float(t.get("priceChangePercent") or 0),"volume24h":float(t.get("quoteVolume") or 0),"rsi":round(rsi,1),"emaTrend":"BULLISH" if trend>0 else "BEARISH","momentum":round(momentum,2),"volumeRatio":round(volratio,2),"score":score,"side":side}
+        results=[]
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            futures=[pool.submit(analyze,t) for t in ranked]
+            for f in as_completed(futures):
+                try:
+                    x=f.result()
+                    if x: results.append(x)
+                except Exception: pass
+        results.sort(key=lambda x:x["score"], reverse=True)
+        return {"ok":True,"exchange":"binance","quote":"USDT","timeframe":timeframe,"scanned":len(ranked),"results":results[:limit],"generated_at":datetime.now(timezone.utc).isoformat()}
+    except Exception as exc:  # noqa: BLE001
+        return safe_error("top-50 market scanner temporarily unavailable")
+
 @app.get("/api/exchange_status")
 def exchange_status():
     from api.market import public_market_probe
