@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from .adapters import AdapterResult, PaperExchangeAdapter
-from .orders import Order, OrderStatus
+from .orders import Order
 
 @dataclass(frozen=True)
 class DryRunResult:
