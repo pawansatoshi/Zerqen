@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -20,7 +19,7 @@ MAX_STOP_DISTANCE = D("0.08")
 STOP_ATR = D("1.5")
 TARGET_R = D("2.0")
 MAX_ALLOCATION = D("0.60")
-MAX_FUTURES_LEVERAGE = D("5")
+MAX_FUTURES_LEVERAGE = D(5)
 MAINTENANCE_MARGIN = D("0.005")
 FUNDING_RATE_ASSUMPTION = D("0.0001")
 
@@ -145,6 +144,8 @@ def backtest(
     if market_type == "spot":
         leverage = 1.0
     lev = D(str(leverage))
+    if lev > MAX_FUTURES_LEVERAGE:
+        raise HTTPException(400, "leverage exceeds backtest maximum")
     capital = D(str(starting_capital))
 
     try:
@@ -237,7 +238,7 @@ def backtest(
                 current_equity = cash
 
         if not position and not daily_locked:
-            regime, signal = _regime(rows, i, ema9, ema21, rsi)
+            _, signal = _regime(rows, i, ema9, ema21, rsi)
             if signal and not _volatility_ok(rows, i, atr):
                 rejected["volatility"] += 1
             elif signal:
