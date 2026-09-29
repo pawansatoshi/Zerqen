@@ -93,9 +93,12 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
   </div>
   <div class="section"><div class="section-head"><div><h2>Control</h2><p>Starting capital is explicit; no financial value is invented.</p></div></div>
     <div class="card small-card"><div class="form">
+      <label>Paper market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px"><select id="paperExchange"></select><input id="paperSymbol" value="BTC/USDT" placeholder="BTC/USDT"><select id="paperTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select></div>
       <label>Paper starting capital</label><input id="paperCapital" type="number" min="1" step="0.01" placeholder="Enter starting capital">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="primary" onclick="paperInitialize()">Initialize paper account</button>
+        <button class="primary" onclick="paperInitialize()">Start paper session</button>
+        <button class="secondary" onclick="paperResume()">Resume paper</button>
+        <button class="secondary" onclick="paperPause()">Pause paper</button>
         <button class="secondary" onclick="paperCycle()">Run market cycle</button>
         <button class="secondary" onclick="paperTestOrder()">Run explicit execution test</button>
         <button class="secondary" onclick="paperHalt()">Halt new orders</button>
@@ -109,8 +112,8 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
   <div class="section"><div class="section-head"><div><h2>Decision log</h2><p>Why Zerqen traded—or refused to trade</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Event</th><th>Evidence</th></tr></thead><tbody id="paperEvents"><tr><td colspan="3" class="empty">No paper events.</td></tr></tbody></table></div></div></div>
 </section>
 <section id="markets" class="view">
-  <div class="section-head"><div><h2>Markets</h2><p>Public market data and deterministic signal evidence</p></div></div>
-  <div class="card chart-card"><div class="chart-head"><div><div class="symbol">BTC/USDT</div><div class="price" id="marketPrice">—</div></div><div><div class="quote" id="marketQuote">—</div><div class="sub">live public feed</div></div></div><div class="chart-wrap" style="height:420px" id="marketChart"></div><div class="timebar"><button class="active">1H</button><button>4H</button><button>1D</button></div></div>
+  <div class="section-head"><div><h2>Markets</h2><p>Normalized backend public market data and deterministic signal evidence</p></div><div><span class="badge" id="marketDataState">CHECKING</span></div></div>
+  <div class="card chart-card"><div class="chart-head"><div><div class="symbol">BTC/USDT</div><div class="price" id="marketPrice">—</div></div><div><div class="quote" id="marketQuote">—</div><div class="sub">live public feed</div></div></div><div class="chart-wrap" style="height:420px" id="marketChart"></div><div class="timebar"><button class="active" data-tf="1h">1H</button><button data-tf="4h">4H</button><button data-tf="1d">1D</button><button data-tf="1w">1W</button></div></div>
   <div class="section"><div class="section-head"><div><h2>Signal evidence</h2><p>Each marker is tied to candle time and indicator state.</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Signal</th><th>Price</th><th>EMA trend</th><th>RSI</th><th>ATR</th><th>State</th></tr></thead><tbody id="signalRows"><tr><td colspan="7" class="empty">Loading signals…</td></tr></tbody></table></div></div></div>
 </section>
 
@@ -126,7 +129,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
 <section id="connections" class="view">
   <div class="section-head"><div><h2>Exchange connections</h2><p>Encrypted credential vault · read-only verification before execution</p></div><button class="connect-btn" onclick="openConnections()">+ Connect exchange</button></div>
   <div id="connectionsList" class="connection-list"></div>
-  <div class="card note" style="margin-top:12px">API credentials are encrypted server-side before storage. Do not grant withdrawal permission. Public market data may stream directly from the exchange; private account data stays server-side.</div><div class="card" style="margin-top:12px;padding:18px"><div class="small-title">System readiness</div><div class="mini-grid" style="margin-top:8px"><div class="metric"><label>Market feed</label><strong id="healthMarket">CONNECTING</strong></div><div class="metric"><label>API</label><strong id="healthApi">CHECKING</strong></div><div class="metric"><label>Execution</label><strong>GUARDED</strong></div><div class="metric"><label>Live trading</label><strong>OFF BY DEFAULT</strong></div></div></div>
+  <div class="card note" style="margin-top:12px">API credentials are encrypted server-side before storage. Do not grant withdrawal permission. Public market data may stream directly from the exchange; private account data stays server-side.</div><div class="card" style="margin-top:12px;padding:18px"><div class="small-title">System readiness</div><div class="mini-grid" style="margin-top:8px"><div class="metric"><label>UI</label><strong>UI_READY</strong></div><div class="metric"><label>Market feed</label><strong id="healthMarket">CHECKING</strong></div><div class="metric"><label>Database</label><strong id="healthDb">CHECKING</strong></div><div class="metric"><label>Paper engine</label><strong id="healthPaper">CHECKING</strong></div><div class="metric"><label>Strategy</label><strong>RESEARCH_ONLY</strong></div><div class="metric"><label>Risk engine</label><strong>GUARDED</strong></div><div class="metric"><label>Execution</label><strong>PAPER_ONLY</strong></div><div class="metric"><label>Live trading</label><strong>OFF</strong></div></div></div>
 </section>
 </main>
 </div>
@@ -174,13 +177,31 @@ async function saveConnection(){
   try{const res=await api("/api/credentials",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",exchange_id:$("exchange").value,mode:$("mode").value,api_key:$("key").value,api_secret:$("secret").value,passphrase:$("pass").value})});const d=await res.json();r.textContent=d.ok?"✓ Encrypted credential saved":"✕ "+(d.error||"save failed");r.className=d.ok?"positive":"negative";if(d.ok){sessionStorage.setItem("zerqen_token",token());await loadConnections();setTimeout(closeModal,500)}}catch(e){r.textContent="✕ network error";r.className="negative"}
 }
 async function loadConnections(){
-  const list=$("connectionsList");if(!list)return;list.innerHTML="<div class='card empty'>Loading connections…</div>";
-  if(!token()){list.innerHTML="<div class='card empty'>Connect an exchange to begin. Server secrets are not entered here.</div>";return}
-  try{const res=await api("/api/credentials");const d=await res.json();if(!d.ok){list.innerHTML="<div class='card empty'>Authentication required to view connections.</div>";return}
-  const saved=new Map((d.connections||[]).map(x=>[x.exchange_id,x]));
-  list.innerHTML=exchanges.map(ex=>{const c=saved.get(ex[0]);const state=c?"CONNECTED":"NOT CONNECTED";const meta=c?"encrypted · "+c.mode+" · "+new Date(c.updated_at).toLocaleString():"no verified credential saved";const action=c?"<button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Disconnect</button>":"<button class='connect-btn' onclick="openModalFor('"+ex[0]+"')">Connect</button>";return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='badge'>"+state+"</span> · "+meta+"</div></div></div>"+action+"</div>"}).join("");
-  if(d.connections.length){activeExchange=d.connections[0].exchange_id;loadAccount(activeExchange)}
-  }catch(e){list.innerHTML="<div class='card empty'>Connection service unavailable.</div>"}
+  const list=$("connectionsList");if(!list)return;
+  list.innerHTML="<div class='card empty'>Testing public market connectivity…</div>";
+  let publicMap=new Map();
+  try{
+    const pr=await fetch("/api/exchange_status",{cache:"no-store"});
+    const pd=await pr.json();
+    (pd.results||[]).forEach(x=>publicMap.set(x.exchange,x));
+  }catch(_){}
+  let saved=new Map();
+  if(token()){
+    try{
+      const res=await api("/api/credentials");const d=await res.json();
+      if(d.ok)(d.connections||[]).forEach(x=>saved.set(x.exchange_id,x));
+    }catch(_){}
+  }
+  list.innerHTML=exchanges.map(ex=>{
+    const pub=publicMap.get(ex[0]);
+    const c=saved.get(ex[0]);
+    const publicState=pub?.status||"FAILED";
+    const privateState=c?"CONNECTED":"NOT_CONFIGURED";
+    const error=pub?.error_type?(pub.error_type+(pub.error_http_status?" · HTTP "+pub.error_http_status:"")):"public probe verified";
+    const action=c?"<button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Remove</button>":"<button class='connect-btn' onclick="openModalFor('"+ex[0]+"')">Configure</button>";
+    return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='badge'>PUBLIC "+publicState+"</span> · <span class='badge'>PRIVATE "+privateState+"</span><br>"+error+" · "+(pub?.public_api||"endpoint unavailable")+"</div></div></div><div style='display:flex;gap:7px;align-items:center'>"+action+"</div></div>";
+  }).join("");
+  const first=[...saved.keys()][0];if(first){activeExchange=first;loadAccount(first)}
 }
 async function loadAccount(exchangeId){
   try{
@@ -236,35 +257,45 @@ function connectMarketSocket(){
   }catch(_){setMarketStatus("STALE",lastTickAt)}
 }
 async function loadHealth(){
-  try{const r=await fetch("/api/health",{cache:"no-store"}),d=await r.json();$("healthApi").textContent=d.ok?"READY":"ERROR"}catch(_){$("healthApi").textContent="OFFLINE"}
+  try{
+    const r=await fetch("/api/health",{cache:"no-store"}),d=await r.json();
+    $("healthApi").textContent=d.ok?"READY":"ERROR";
+    $("healthDb").textContent=d.configuration?.database_status||"UNKNOWN";
+    $("healthPaper").textContent=d.configuration?.database_status==="CONNECTED"?"READY":"BLOCKED";
+    $("healthMarket").textContent="PUBLIC";
+  }catch(_){
+    $("healthApi").textContent="OFFLINE";$("healthDb").textContent="UNKNOWN";$("healthPaper").textContent="BLOCKED";
+  }
 }
 async function loadMarket(){
   const tf=currentTimeframe;
-  const binanceTf={"1h":"1h","4h":"4h","1d":"1d","1w":"1w"}[tf]||"1h";
   try{
-    let d=null;
-    try{
-      const rr=await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval="+binanceTf+"&limit=120",{cache:"no-store"});
-      if(rr.ok){
-        const rows=await rr.json();
-        if(Array.isArray(rows)&&rows.length){
-          const closes=rows.map(r=>Number(r[4])),opens=rows.map(r=>Number(r[1])),highs=rows.map(r=>Number(r[2])),lows=rows.map(r=>Number(r[3])),volumes=rows.map(r=>Number(r[5]));
-          d={ok:true,exchange:"binance",symbol:"BTC/USDT",timeframe:tf,times:rows.map(r=>Number(r[0])),opens,highs,lows,closes,volumes,ema9:ema(closes,9),ema21:ema(closes,21),rsi:rsi(closes),atr:(()=>{const a=Array(rows.length).fill(null),trs=rows.map((r,i)=>{const pc=i?closes[i-1]:closes[i];return Math.max(highs[i]-lows[i],Math.abs(highs[i]-pc),Math.abs(lows[i]-pc))});if(trs.length>14){let v=trs.slice(1,15).reduce((x,y)=>x+y,0)/14;a[14]=v;for(let i=15;i<trs.length;i++){v=(v*13+trs[i])/14;a[i]=v}}return a})()};
-        }
-      }
-    }catch(_){}
-    if(!d){
-      const res=await fetch("/api/market?exchange=binance&symbol=BTC%2FUSDT&timeframe="+encodeURIComponent(tf)+"&limit=120",{cache:"no-store"});
-      d=await res.json();
+    const res=await fetch("/api/market?exchange=okx&symbol=BTC%2FUSDT&timeframe="+encodeURIComponent(tf)+"&limit=120",{cache:"no-store"});
+    const d=await res.json();
+    if(!d.ok || !d.closes?.length){
+      marketData=null;
+      $("chart").innerHTML="<div class='empty'>DATA UNAVAILABLE · "+(d.error_type||d.error||"public market feed failed")+" · "+(d.error_stage||"unknown stage")+"</div>";
+      $("marketChart").innerHTML="<div class='empty'>DATA UNAVAILABLE · "+(d.error_type||d.error||"public market feed failed")+" · "+(d.error_stage||"unknown stage")+"</div>";
+      $("marketDataState").textContent=(d.connectivity_status||"FAILED");
+      setMarketStatus("UNAVAILABLE",Date.now());
+      return;
     }
-    if(!d.ok)throw Error(d.error||"market error");
     marketData=d;
     const last=d.closes[d.closes.length-1],prev=d.closes[d.closes.length-2],chg=(last/prev-1)*100;
     $("chartPrice").textContent="$"+fmt(last);$("quote").textContent="$"+fmt(last);$("quoteChange").textContent=(chg>=0?"+":"")+fmt(chg)+"%";$("quoteChange").className="price "+(chg>=0?"positive":"negative");
     $("marketPrice").textContent="$"+fmt(last);$("marketQuote").textContent=(chg>=0?"+":"")+fmt(chg)+"%";
+    $("marketDataState").textContent=d.connectivity_status+" · "+new Date(d.times[d.times.length-1]).toLocaleString();
+    $("marketAge").textContent="latest candle "+new Date(d.times[d.times.length-1]).toLocaleString();
     const sig=buildSignals(d.closes);renderCandles("chart",d,sig);renderCandles("marketChart",d,sig);
     $("signalRows").innerHTML=sig.slice().reverse().map(s=>{const i=s.index;return "<tr><td>"+new Date(d.times[i]).toLocaleString()+"</td><td class='"+(s.side==="BUY"?"filled":"negative")+"'>"+s.side+"</td><td>$"+fmt(d.closes[i])+"</td><td>"+(d.ema9[i]>d.ema21[i]?"Bullish":"Bearish")+"</td><td>"+fmt(d.rsi[i]||0,1)+"</td><td>"+fmt(d.atr[i]||0,2)+"</td><td><span class='badge'>research signal</span></td></tr>"}).join("")||"<tr><td colspan='7' class='empty'>No crossover signal in the loaded window.</td></tr>";
-  }catch(e){$("chart").innerHTML="<div class='empty'>Market feed unavailable. Retrying automatically.</div>";$("marketChart").innerHTML="<div class='empty'>Market feed unavailable. Retrying automatically.</div>";setMarketStatus("STALE",lastTickAt)}
+    setMarketStatus("LIVE",Date.now());
+  }catch(e){
+    marketData=null;
+    $("chart").innerHTML="<div class='empty'>DATA UNAVAILABLE · backend market request failed</div>";
+    $("marketChart").innerHTML="<div class='empty'>DATA UNAVAILABLE · backend market request failed</div>";
+    $("marketDataState").textContent="FAILED";
+    setMarketStatus("UNAVAILABLE",Date.now());
+  }
 }
 function setActiveTimeframe(tf){
   currentTimeframe=tf;document.querySelectorAll("[data-tf]").forEach(b=>b.classList.toggle("active",b.dataset.tf===tf));loadMarket();
@@ -274,26 +305,30 @@ document.querySelectorAll(".period").forEach(b=>b.addEventListener("click",()=>{
 async function refreshAll(){toast("Refreshing live data…");await Promise.all([loadMarket(),loadHealth(),loadConnections()]);lastRefresh=Date.now();toast("Dashboard refreshed")}
 
 async function paperApi(action,extra={}){return api("/api/paper",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action},extra))})}
+function paperConfig(){return {exchange_id:$("paperExchange").value,symbol:$("paperSymbol").value.trim().toUpperCase(),timeframe:$("paperTimeframe").value}}
 function renderPaper(d){
   if(!d||!d.initialized){$("paperMode").textContent="PAPER · NOT INITIALIZED";$("paperMessage").textContent=d?.error||"Set an explicit starting capital to begin.";return}
   $("paperEquity").textContent="$"+fmt(d.equity);$("paperCash").textContent="$"+fmt(d.cash);$("paperRealized").textContent=(d.realized_pnl>=0?"+":"")+fmt(d.realized_pnl);$("paperUnrealized").textContent=(d.unrealized_pnl>=0?"+":"")+fmt(d.unrealized_pnl);$("paperDD").textContent=fmt(d.drawdown*100,2)+"%";
   $("paperDaily").textContent=fmt((d.daily_pnl/Math.max(d.equity,0.0000001))*100,2)+"%";$("paperExposure").textContent=fmt(d.gross_exposure/Math.max(d.equity,0.0000001),2)+"x";
-  $("paperSafety").textContent=d.halted?"HALTED":"ARMED";$("paperHaltState").textContent=d.halted?"HALT NEW ORDERS ACTIVE":"Paper execution ready";$("paperMode").textContent="PAPER · LIVE CAPITAL OFF";
+  $("paperSafety").textContent=d.halted?"HALTED":(d.paused?"PAUSED":"ARMED");$("paperHaltState").textContent=d.halted?"HALT NEW ORDERS ACTIVE":(d.paused?"PAPER SESSION PAUSED":"Paper execution ready");$("paperMode").textContent="PAPER · LIVE CAPITAL OFF";
   $("paperMessage").textContent="research hurdle 8.00% — not a trading requirement";
   $("paperPositions").innerHTML=d.positions.length?d.positions.map(p=>"<tr><td>"+p.symbol+"</td><td>"+p.side.toUpperCase()+"</td><td>"+fmt(p.quantity,6)+"</td><td>$"+fmt(p.average_entry)+"</td><td>$"+fmt(p.fees,4)+"</td><td>"+fmt(p.realized_pnl,4)+"</td></tr>").join(""):"<tr><td colspan='6' class='empty'>No paper positions.</td></tr>";
   $("paperOrders").innerHTML=d.orders.length?d.orders.map(o=>"<tr><td>"+new Date(o.created_at).toLocaleString()+"</td><td>"+o.symbol+"</td><td>"+o.side.toUpperCase()+"</td><td>"+fmt(o.quantity,6)+"</td><td>"+(o.average_price?"$"+fmt(o.average_price):"—")+"</td><td><span class='badge'>"+o.status+"</span></td><td>"+(o.strategy||"—")+"</td></tr>").join(""):"<tr><td colspan='7' class='empty'>No paper orders.</td></tr>";
   $("paperEvents").innerHTML=d.events.length?d.events.map(e=>"<tr><td>"+new Date(e.created_at).toLocaleString()+"</td><td>"+e.type+"</td><td>"+JSON.stringify(e.payload).slice(0,240)+"</td></tr>").join(""):"<tr><td colspan='3' class='empty'>No paper events.</td></tr>";
 }
 async function loadPaper(){if(!token()){return}try{const r=await api("/api/paper",{cache:"no-store"});const d=await r.json();renderPaper(d)}catch(_){$("paperMessage").textContent="Paper state unavailable"}}
-async function paperInitialize(){const capital=$("paperCapital").value;if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const r=await paperApi("initialize",{starting_capital:capital});const d=await r.json();renderPaper(d);toast(d.ok?"Paper account initialized":"Initialization failed")}
+async function paperInitialize(){const capital=$("paperCapital").value;if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();renderPaper(d);toast(d.ok?"Paper account initialized":"Initialization failed")}
 async function paperCycle(){const r=await paperApi("cycle");const d=await r.json();renderPaper(d);toast(d.ok?"Real market cycle evaluated":"Paper cycle failed")}
 async function paperTestOrder(){const r=await paperApi("test_order",{symbol:"BTC/USDT",side:"buy"});const d=await r.json();renderPaper(d);toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
+async function paperPause(){const r=await paperApi("pause");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session paused":"Pause failed")}
+async function paperResume(){const r=await paperApi("resume");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session resumed":"Resume failed")}
 async function paperHalt(){const r=await paperApi("halt");const d=await r.json();renderPaper(d);toast(d.ok?"HALT NEW ORDERS active":"Could not halt")}
 async function paperFlatten(){const r=await paperApi("flatten");const d=await r.json();renderPaper(d);toast(d.ok?"Paper positions flattened":"Flatten failed")}
 async function paperReset(){if(!confirm("Reset PAPER account only? This cannot affect exchange accounts, credentials, or production state."))return;const r=await paperApi("reset");const d=await r.json();renderPaper(d);toast(d.ok?"Paper account reset":"Reset failed")}
 
+function fillPaperExchanges(){const s=$("paperExchange");if(!s||s.options.length)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)));s.value="okx"}
 function renderEquity(){const e=$("equityChart");if(e)e.innerHTML="<div class='empty'>No persisted equity snapshots yet. Live account value is shown after an exchange connection.</div>"}
-fillExchanges();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
+fillExchanges();fillPaperExchanges();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);
 setInterval(loadMarket,30000);
 setInterval(loadHealth,30000);setInterval(loadPaper,15000);
