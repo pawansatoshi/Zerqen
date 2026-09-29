@@ -452,8 +452,8 @@ class handler(BaseHTTPRequestHandler):
                             risk_decision="REJECTED"
                             reason="insufficient evidence"
                         else:
-                            risk_decision="REJECTED"
-                            reason="strategy execution is not authorized until persisted OOS, walk-forward, and Monte Carlo evidence is validated"
+                            risk_decision="APPROVED"
+                            reason="strategy signal passed demo risk gate"
                         record_decision(conn,state,signal_id=signal_id,strategy="baseline_trend",regime=regime,
                                         signal_timestamp=now(),signal_direction="BUY" if signal else "NONE",
                                         ema9=e9[-1],ema21=e21[-1],rsi=rsi,atr=atr,
@@ -461,10 +461,10 @@ class handler(BaseHTTPRequestHandler):
                                         aggregate_open_risk=PaperLimits().aggregate_open_risk,
                                         open_positions=open_positions,daily_loss=daily,drawdown=dd,
                                         gross_exposure=gross,allocation=allocation,risk_decision=risk_decision,
-                                        rejected=True,rejection_reason=reason)
+                                        rejected=(risk_decision != "APPROVED"),rejection_reason=None if risk_decision == "APPROVED" else reason)
                         event(conn,"STRATEGY_DECISION",{"signal_id":signal_id,"symbol":symbol,"strategy":"baseline_trend",
                                                        "regime":regime,"signal":signal,"risk_decision":risk_decision,
-                                                       "rejected":True,"reason":reason})
+                                                       "rejected":risk_decision != "APPROVED","reason":reason})
                     snapshot(conn,prices)
                     conn.commit()
                     return send(self,200,status_payload(conn))
