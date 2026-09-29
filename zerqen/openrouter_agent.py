@@ -74,20 +74,24 @@ REGISTRY = FreeModelRegistry()
 def _http_json(method, url, payload=None):
     body = json.dumps(payload, separators=(',', ':')).encode() if payload is not None else None
     req = urllib.request.Request(url, data=body, method=method, headers={'Accept':'application/json','Content-Type':'application/json','Authorization':f"Bearer {os.environ.get('OPENROUTER_API_KEY','')}",'HTTP-Referer':os.environ.get('OPENROUTER_HTTP_REFERER','https://zerqen.local'),'X-Title':'Zerqen Free-Only AI Agent','User-Agent':'Zerqen-FreeOnly-Agent/1.0'})
-    with urllib.request.urlopen(req, timeout=25) as response: return json.loads(response.read().decode())
+    with urllib.request.urlopen(req, timeout=25) as response:
+        return json.loads(response.read().decode())
 
 def _extract_text(payload):
     choices = payload.get('choices') or []
-    if not choices: raise ValueError('OpenRouter returned no choices')
+    if not choices:
+        raise ValueError('OpenRouter returned no choices')
     content = (choices[0].get('message') or {}).get('content')
     if isinstance(content, str):
         return content
-    if isinstance(content, list): return ''.join(str(p.get('text','')) for p in content if isinstance(p,dict))
+    if isinstance(content, list):
+        return ''.join(str(p.get('text', '')) for p in content if isinstance(p, dict))
     raise ValueError('OpenRouter returned no text content')
 
 def _parse_decision(text):
     cleaned = text.strip().strip('`')
-    if cleaned.startswith('json'): cleaned = cleaned[4:].strip()
+    if cleaned.startswith('json'):
+        cleaned = cleaned[4:].strip()
     start, end = cleaned.find('{'), cleaned.rfind('}')
     if start < 0 or end <= start:
         raise ValueError('AI response was not JSON')
