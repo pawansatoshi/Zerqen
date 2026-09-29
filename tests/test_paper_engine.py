@@ -58,7 +58,7 @@ def test_gross_exposure_cap_blocks_new_risk():
 
 
 def test_partial_fill_then_close_realizes_net_pnl():
-    position, realized = apply_fill(None, "buy", D(1), D(100), D(0.10))
+    position, _ = apply_fill(None, "buy", D(1), D(100), D(0.10))
     position.symbol = "BTC/USDT"
     assert position.quantity == D(1)
     position, realized2 = apply_fill(position, "sell", D(0.4), D(110), D(0.05))
