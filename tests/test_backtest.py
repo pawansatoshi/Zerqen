@@ -15,4 +15,4 @@ def test_structural_stop_respects_eight_percent_cap():
         close = D(100)
         rows.append([i, close, D(101), D(99), close, D(1000)])
     atr = D(10)
-    assert _structural_stop(rows, 20, "buy", atr) is None
+    assert _structural_stop(rows, 20, "buy", [atr] * 21) is None
