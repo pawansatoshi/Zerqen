@@ -3,9 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import os
-from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import Response
@@ -281,7 +279,7 @@ def ledger(
                     "equity_snapshots":equity,"audit_log":audit}
     except HTTPException:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         raise HTTPException(503,"ledger data temporarily unavailable")
 
 
@@ -325,7 +323,6 @@ def export_ledger(
     q: str | None = Query(None),
 ):
     _require(x_zerqen_dashboard_token)
-    from fastapi.responses import StreamingResponse
     with _db() as conn:
         _ensure_schema(conn)
         where,vals=_filters(locals())
