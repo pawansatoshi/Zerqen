@@ -51,7 +51,7 @@ def test_gross_exposure_cap_blocks_new_risk():
         limits,
         D(0),
         D(10000),
-        proposed_notional=D(100),
+        proposed_notional=result.quantity * D(100),
     )
     assert not allowed
     assert "gross exposure" in reason
