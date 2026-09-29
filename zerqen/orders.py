@@ -2,17 +2,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+
 class OrderSide(StrEnum):
     BUY = "buy"
     SELL = "sell"
 
+
 class OrderStatus(StrEnum):
-    NEW = "new"
+    CREATED = "created"
+    RISK_CHECK = "risk_check"
+    APPROVED = "approved"
     SUBMITTED = "submitted"
+    ACKNOWLEDGED = "acknowledged"
     PARTIALLY_FILLED = "partially_filled"
     FILLED = "filled"
+    CANCEL_REQUESTED = "cancel_requested"
     CANCELED = "canceled"
+    EXPIRED = "expired"
     REJECTED = "rejected"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
 
 @dataclass(frozen=True)
 class Order:
@@ -22,6 +32,7 @@ class Order:
     quantity: float
     order_type: str = "market"
 
+
 @dataclass(frozen=True)
 class OrderEvent:
     client_order_id: str
@@ -30,12 +41,32 @@ class OrderEvent:
     average_price: float
     message: str = ""
 
+
 class OrderStateMachine:
     _allowed = {
-        OrderStatus.NEW: {OrderStatus.SUBMITTED, OrderStatus.REJECTED, OrderStatus.CANCELED},
-        OrderStatus.SUBMITTED: {OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED, OrderStatus.REJECTED, OrderStatus.CANCELED},
-        OrderStatus.PARTIALLY_FILLED: {OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.REJECTED},
-        OrderStatus.FILLED: set(), OrderStatus.CANCELED: set(), OrderStatus.REJECTED: set(),
+        OrderStatus.CREATED: {OrderStatus.RISK_CHECK, OrderStatus.REJECTED, OrderStatus.FAILED},
+        OrderStatus.RISK_CHECK: {OrderStatus.APPROVED, OrderStatus.REJECTED},
+        OrderStatus.APPROVED: {OrderStatus.SUBMITTED, OrderStatus.REJECTED, OrderStatus.FAILED},
+        OrderStatus.SUBMITTED: {OrderStatus.ACKNOWLEDGED, OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED,
+                                OrderStatus.CANCEL_REQUESTED, OrderStatus.CANCELED, OrderStatus.REJECTED,
+                                OrderStatus.EXPIRED, OrderStatus.FAILED, OrderStatus.UNKNOWN},
+        OrderStatus.ACKNOWLEDGED: {OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED,
+                                   OrderStatus.CANCEL_REQUESTED, OrderStatus.CANCELED,
+                                   OrderStatus.EXPIRED, OrderStatus.FAILED, OrderStatus.UNKNOWN},
+        OrderStatus.PARTIALLY_FILLED: {OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED,
+                                       OrderStatus.CANCEL_REQUESTED, OrderStatus.CANCELED,
+                                       OrderStatus.EXPIRED, OrderStatus.UNKNOWN},
+        OrderStatus.CANCEL_REQUESTED: {OrderStatus.CANCELED, OrderStatus.FILLED,
+                                       OrderStatus.PARTIALLY_FILLED, OrderStatus.UNKNOWN},
+        OrderStatus.UNKNOWN: {OrderStatus.ACKNOWLEDGED, OrderStatus.PARTIALLY_FILLED,
+                              OrderStatus.FILLED, OrderStatus.CANCEL_REQUESTED,
+                              OrderStatus.CANCELED, OrderStatus.EXPIRED, OrderStatus.REJECTED,
+                              OrderStatus.FAILED, OrderStatus.UNKNOWN},
+        OrderStatus.FILLED: set(),
+        OrderStatus.CANCELED: set(),
+        OrderStatus.EXPIRED: set(),
+        OrderStatus.REJECTED: set(),
+        OrderStatus.FAILED: set(),
     }
 
     def __init__(self) -> None:
@@ -46,7 +77,7 @@ class OrderStateMachine:
             raise ValueError("client_order_id already registered")
         if order.quantity <= 0:
             raise ValueError("quantity must be positive")
-        self._status[order.client_order_id] = OrderStatus.NEW
+        self._status[order.client_order_id] = OrderStatus.CREATED
 
     def transition(self, client_order_id: str, status: OrderStatus) -> OrderStatus:
         current = self._status.get(client_order_id)
