@@ -540,7 +540,7 @@ async function paperCycle(){
   await loadLedger();
   if(!d.ok && d.error) $("paperMessage").textContent=d.error;
 }
-async async function paperToggleAuto(){
+async function paperToggleAuto(){
   const action=autoDemoTimer?"stop":"start";
   if(action==="start" && !$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
   try{
