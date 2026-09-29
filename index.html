@@ -76,6 +76,14 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
 <section id="paper" class="view">
   <div class="section-head"><div><h2>Execution Control Center</h2><p>Choose the execution mode. Demo is available now; real-money execution stays locked until explicitly enabled.</p></div><div style="display:flex;gap:7px"><span class="badge">DEMO READY</span><span class="badge">REAL LOCKED</span></div></div>
   <div class="card small-card" style="margin-bottom:16px"><div class="small-title">AI decision engine · FREE ONLY</div><div style="display:flex;gap:10px;align-items:center;margin-top:10px"><span id="aiStatusBadge" class="badge">CHECKING</span><span id="aiStatusText" class="note">OpenRouter free-model registry is being checked.</span></div></div>
+  <div class="card small-card" style="margin-bottom:16px">
+    <div class="small-title">AI Market Intelligence</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <span id="aiRuntimeBadge" class="badge">CHECKING</span>
+      <button class="secondary" onclick="refreshMarketIntelligence()">REFRESH REPORT</button>
+    </div>
+    <div id="marketIntelGrid" class="note" style="margin-top:12px">One normalized report will combine 1h/4h/1d indicators, structure, volatility, futures/options context and candidate setups.</div>
+  </div>
   <div class="card small-card" style="margin-bottom:16px"><div class="small-title">Execution mode</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
     <button id="demoModeBtn" class="primary" onclick="selectExecutionMode('demo')">DEMO · PAPER</button>
     <button id="realModeBtn" class="secondary" onclick="selectExecutionMode('real')">REAL · LOCKED</button>
@@ -546,6 +554,36 @@ async function refreshAIStatus(){
     else{b.textContent="AI HOLD";t.textContent=d.error||"Free-model registry unavailable; AI entries remain blocked."}
   }catch(_){
     const b=$("aiStatusBadge"),t=$("aiStatusText");if(b)b.textContent="AI UNKNOWN";if(t)t.textContent="AI status unavailable; no AI-authorized entry is permitted."
+  }
+}
+async function refreshMarketIntelligence(){
+  const grid=$("marketIntelGrid"),badge=$("aiRuntimeBadge");
+  if(!grid)return;
+  try{
+    const symbol=($("paperSymbol")?.value||"BTC/USDT").trim().toUpperCase();
+    const r=await api("/api/market-intelligence?symbol="+encodeURIComponent(symbol)+"&exchange=binance",{cache:"no-store"});
+    const d=await r.json();
+    if(!d.ok)throw new Error(d.error||"report unavailable");
+    const x=d.report||{}, one=x.timeframes?.["1h"]||{}, four=x.timeframes?.["4h"]||{}, day=x.timeframes?.["1d"]||{};
+    const der=x.derivatives||{},opt=x.options||{},risk=x.risk||{};
+    grid.innerHTML=[
+      ["regime",x.market_structure?.regime||"—"],
+      ["1h rsi",one.rsi14==null?"—":Number(one.rsi14).toFixed(1)],
+      ["4h trend",four.ema9&&four.ema21?(four.ema9>four.ema21?"bullish":"bearish"):"—"],
+      ["1d trend",day.ema9&&day.ema21?(day.ema9>day.ema21?"bullish":"bearish"):"—"],
+      ["atr",one.atr_pct==null?"—":(Number(one.atr_pct)*100).toFixed(2)+"%"],
+      ["volume",one.volume_ratio==null?"—":Number(one.volume_ratio).toFixed(2)+"x"],
+      ["funding",der.funding_rate==null?"unavailable":der.funding_rate],
+      ["open interest",der.open_interest==null?"unavailable":der.open_interest],
+      ["futures expiry",der.expiry_risk||"unavailable"],
+      ["options expiry",opt.nearest_expiry||"unavailable"],
+      ["setup",x.setup_candidates?.[0]?.name||"NO TRADE"],
+      ["risk gate",risk.volatility_ok?"PASS":"BLOCK"]
+    ].map(([k,v])=>"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.12)'><span>"+k+"</span><strong>"+v+"</strong></div>").join("");
+    if(badge){badge.textContent="REPORT READY";badge.className="badge";}
+  }catch(e){
+    if(grid)grid.textContent="Market intelligence unavailable: "+e.message;
+    if(badge)badge.textContent="REPORT ERROR";
   }
 }
 async function refreshPaperStatus(){
