@@ -36,7 +36,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
 </header>
 
 <nav class="nav">
-  <button class="navbtn active" data-view="overview">Overview</button><button class="navbtn" data-view="markets">Markets</button><button class="navbtn" data-view="positions">Positions</button><button class="navbtn" data-view="orders">Orders</button><button class="navbtn" data-view="performance">Performance</button><button class="navbtn" data-view="connections">Connections</button>
+  <button class="navbtn active" data-view="overview">Overview</button><button class="navbtn" data-view="paper">Paper Demo</button><button class="navbtn" data-view="markets">Markets</button><button class="navbtn" data-view="positions">Positions</button><button class="navbtn" data-view="orders">Orders</button><button class="navbtn" data-view="performance">Performance</button><button class="navbtn" data-view="connections">Connections</button>
 </nav>
 
 <main>
@@ -71,6 +71,43 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
   <div class="section"><div class="section-head"><div><h2>Recent activity</h2><p>Execution and account events</p></div><button class="link" onclick="showView('orders')">View activity →</button></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Pair</th><th>Side</th><th>Price</th><th>Size</th><th>P&L</th><th>Status</th></tr></thead><tbody id="activityRows"><tr><td colspan="7" class="empty">No executions recorded yet.</td></tr></tbody></table></div></div></div>
 </section>
 
+<section id="paper" class="view">
+  <div class="section-head"><div><h2>Paper Demo Control Center</h2><p>Real public market data · simulated execution · durable server-side state</p></div><div><span class="badge">LIVE CAPITAL OFF</span></div></div>
+  <div class="hero">
+    <div class="card hero-card">
+      <div class="eyebrow">Paper equity</div><div class="hero-value" id="paperEquity">—</div>
+      <div class="return" id="paperMode">PAPER · NOT INITIALIZED</div>
+      <div class="mini-grid">
+        <div class="metric"><label>Available / cash basis</label><strong id="paperCash">—</strong></div>
+        <div class="metric"><label>Realized net P&L</label><strong id="paperRealized">—</strong></div>
+        <div class="metric"><label>Unrealized P&L</label><strong id="paperUnrealized">—</strong></div>
+        <div class="metric"><label>Drawdown</label><strong id="paperDD">—</strong></div>
+      </div>
+    </div>
+    <div class="card status-card">
+      <div><div class="status-head"><span class="eyebrow">Safety state</span><span class="live"><i class="dot"></i><span id="paperSafety">READY</span></span></div>
+      <div class="engine" id="paperHaltState">Paper execution</div>
+      <div class="sub">8% research hurdle is informational only. Automatic strategy execution is blocked until validation evidence is persisted.</div></div>
+      <div><div class="riskrow"><span>Open risk</span><span id="paperRisk">0.00%</span></div><div class="riskrow"><span>Daily loss</span><span id="paperDaily">0.00%</span></div><div class="riskrow"><span>Exposure</span><span id="paperExposure">0.00x</span></div></div>
+    </div>
+  </div>
+  <div class="section"><div class="section-head"><div><h2>Control</h2><p>Starting capital is explicit; no financial value is invented.</p></div></div>
+    <div class="card small-card"><div class="form">
+      <label>Paper starting capital</label><input id="paperCapital" type="number" min="1" step="0.01" placeholder="Enter starting capital">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="primary" onclick="paperInitialize()">Initialize paper account</button>
+        <button class="secondary" onclick="paperCycle()">Run market cycle</button>
+        <button class="secondary" onclick="paperTestOrder()">Run explicit execution test</button>
+        <button class="secondary" onclick="paperHalt()">Halt new orders</button>
+        <button class="secondary" onclick="paperFlatten()">Flatten paper positions</button>
+      </div>
+      <div id="paperMessage" class="note">No paper account initialized.</div>
+    </div></div>
+  </div>
+  <div class="section"><div class="section-head"><div><h2>Paper positions</h2><p>Authoritative server-side positions marked against real public prices</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg entry</th><th>Fees</th><th>Realized P&L</th></tr></thead><tbody id="paperPositions"><tr><td colspan="6" class="empty">No paper positions.</td></tr></tbody></table></div></div></div>
+  <div class="section"><div class="section-head"><div><h2>Paper orders</h2><p>Durable order lifecycle</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Fill</th><th>Status</th><th>Strategy</th></tr></thead><tbody id="paperOrders"><tr><td colspan="7" class="empty">No paper orders.</td></tr></tbody></table></div></div></div>
+  <div class="section"><div class="section-head"><div><h2>Decision log</h2><p>Why Zerqen traded—or refused to trade</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Event</th><th>Evidence</th></tr></thead><tbody id="paperEvents"><tr><td colspan="3" class="empty">No paper events.</td></tr></tbody></table></div></div></div>
+</section>
 <section id="markets" class="view">
   <div class="section-head"><div><h2>Markets</h2><p>Public market data and deterministic signal evidence</p></div></div>
   <div class="card chart-card"><div class="chart-head"><div><div class="symbol">BTC/USDT</div><div class="price" id="marketPrice">—</div></div><div><div class="quote" id="marketQuote">—</div><div class="sub">live public feed</div></div></div><div class="chart-wrap" style="height:420px" id="marketChart"></div><div class="timebar"><button class="active">1H</button><button>4H</button><button>1D</button></div></div>
@@ -233,11 +270,30 @@ function setActiveTimeframe(tf){
 document.querySelectorAll("[data-tf]").forEach(b=>b.addEventListener("click",()=>setActiveTimeframe(b.dataset.tf)));
 document.querySelectorAll(".period").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".period").forEach(x=>x.classList.remove("active"));b.classList.add("active");toast("Verified portfolio history will populate this period")}));
 async function refreshAll(){toast("Refreshing live data…");await Promise.all([loadMarket(),loadHealth(),loadConnections()]);lastRefresh=Date.now();toast("Dashboard refreshed")}
+
+async function paperApi(action,extra={}){return api("/api/paper",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action},extra))})}
+function renderPaper(d){
+  if(!d||!d.initialized){$("paperMode").textContent="PAPER · NOT INITIALIZED";$("paperMessage").textContent=d?.error||"Set an explicit starting capital to begin.";return}
+  $("paperEquity").textContent="$"+fmt(d.equity);$("paperCash").textContent="$"+fmt(d.cash);$("paperRealized").textContent=(d.realized_pnl>=0?"+":"")+fmt(d.realized_pnl);$("paperUnrealized").textContent=(d.unrealized_pnl>=0?"+":"")+fmt(d.unrealized_pnl);$("paperDD").textContent=fmt(d.drawdown*100,2)+"%";
+  $("paperDaily").textContent=fmt((d.daily_pnl/Math.max(d.equity,0.0000001))*100,2)+"%";$("paperExposure").textContent=fmt(d.gross_exposure/Math.max(d.equity,0.0000001),2)+"x";
+  $("paperSafety").textContent=d.halted?"HALTED":"ARMED";$("paperHaltState").textContent=d.halted?"HALT NEW ORDERS ACTIVE":"Paper execution ready";$("paperMode").textContent="PAPER · LIVE CAPITAL OFF";
+  $("paperMessage").textContent="research hurdle 8.00% — not a trading requirement";
+  $("paperPositions").innerHTML=d.positions.length?d.positions.map(p=>"<tr><td>"+p.symbol+"</td><td>"+p.side.toUpperCase()+"</td><td>"+fmt(p.quantity,6)+"</td><td>$"+fmt(p.average_entry)+"</td><td>$"+fmt(p.fees,4)+"</td><td>"+fmt(p.realized_pnl,4)+"</td></tr>").join(""):"<tr><td colspan='6' class='empty'>No paper positions.</td></tr>";
+  $("paperOrders").innerHTML=d.orders.length?d.orders.map(o=>"<tr><td>"+new Date(o.created_at).toLocaleString()+"</td><td>"+o.symbol+"</td><td>"+o.side.toUpperCase()+"</td><td>"+fmt(o.quantity,6)+"</td><td>"+(o.average_price?"$"+fmt(o.average_price):"—")+"</td><td><span class='badge'>"+o.status+"</span></td><td>"+(o.strategy||"—")+"</td></tr>").join(""):"<tr><td colspan='7' class='empty'>No paper orders.</td></tr>";
+  $("paperEvents").innerHTML=d.events.length?d.events.map(e=>"<tr><td>"+new Date(e.created_at).toLocaleString()+"</td><td>"+e.type+"</td><td>"+JSON.stringify(e.payload).slice(0,240)+"</td></tr>").join(""):"<tr><td colspan='3' class='empty'>No paper events.</td></tr>";
+}
+async function loadPaper(){if(!token()){return}try{const r=await api("/api/paper",{cache:"no-store"});const d=await r.json();renderPaper(d)}catch(_){$("paperMessage").textContent="Paper state unavailable"}}
+async function paperInitialize(){const capital=$("paperCapital").value;if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const r=await paperApi("initialize",{starting_capital:capital});const d=await r.json();renderPaper(d);toast(d.ok?"Paper account initialized":"Initialization failed")}
+async function paperCycle(){const r=await paperApi("cycle");const d=await r.json();renderPaper(d);toast(d.ok?"Real market cycle evaluated":"Paper cycle failed")}
+async function paperTestOrder(){const r=await paperApi("test_order",{symbol:"BTC/USDT",side:"buy"});const d=await r.json();renderPaper(d);toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
+async function paperHalt(){const r=await paperApi("halt");const d=await r.json();renderPaper(d);toast(d.ok?"HALT NEW ORDERS active":"Could not halt")}
+async function paperFlatten(){const r=await paperApi("flatten");const d=await r.json();renderPaper(d);toast(d.ok?"Paper positions flattened":"Flatten failed")}
+
 function renderEquity(){const e=$("equityChart");if(e)e.innerHTML="<div class='empty'>No persisted equity snapshots yet. Live account value is shown after an exchange connection.</div>"}
-fillExchanges();renderEquity();loadHealth();loadMarket();loadConnections();connectMarketSocket();
+fillExchanges();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);
 setInterval(loadMarket,30000);
-setInterval(loadHealth,30000);
+setInterval(loadHealth,30000);setInterval(loadPaper,15000);
 setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
 
 </script>
