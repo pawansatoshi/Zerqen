@@ -58,7 +58,15 @@ def db():
             consecutive_losses INTEGER NOT NULL DEFAULT 0,
             cooldown_until TIMESTAMPTZ,
             last_marked_at TIMESTAMPTZ,
-            updated_at TIMESTAMPTZ NOT NULL
+            updated_at TIMESTAMPTZ NOT NULL,
+            ai_mode TEXT NOT NULL DEFAULT 'auto',
+            ai_degraded_until TIMESTAMPTZ,
+            ai_last_ok_at TIMESTAMPTZ,
+            ai_last_error TEXT,
+            ai_last_model TEXT,
+            ai_last_confidence NUMERIC,
+            ai_safe_mode_entries INTEGER NOT NULL DEFAULT 0,
+            ai_report_hash TEXT
         )
     """)
     conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS paused BOOLEAN NOT NULL DEFAULT FALSE")
@@ -69,6 +77,14 @@ def db():
     conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS daily_target_hit BOOLEAN NOT NULL DEFAULT FALSE")
     conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS consecutive_losses INTEGER NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS cooldown_until TIMESTAMPTZ")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS ai_mode TEXT NOT NULL DEFAULT 'auto'")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS ai_degraded_until TIMESTAMPTZ")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS ai_last_ok_at TIMESTAMPTZ")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS ai_last_error TEXT")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS ai_last_model TEXT")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS ai_last_confidence NUMERIC")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS ai_safe_mode_entries INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS ai_report_hash TEXT")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS zerqen_paper_orders (
             client_order_id TEXT PRIMARY KEY,
@@ -157,7 +173,7 @@ def now():
 
 def get_state(conn):
     row = conn.execute(
-        "SELECT account_id, starting_equity, cash, realized_pnl, fees, funding, slippage, peak_equity, day_start_equity, halted, flatten_requested, paused, exchange_id, symbol, timeframe, market_type, daily_target_hit, consecutive_losses, cooldown_until, last_marked_at, updated_at FROM zerqen_paper_state WHERE account_id='default'"
+        "SELECT account_id, starting_equity, cash, realized_pnl, fees, funding, slippage, peak_equity, day_start_equity, halted, flatten_requested, paused, exchange_id, symbol, timeframe, market_type, daily_target_hit, consecutive_losses, cooldown_until, last_marked_at, updated_at, ai_mode, ai_degraded_until, ai_last_ok_at, ai_last_error, ai_last_model, ai_last_confidence, ai_safe_mode_entries, ai_report_hash FROM zerqen_paper_state WHERE account_id='default'"
     ).fetchone()
     return row
 
@@ -188,7 +204,7 @@ def fetch_public_market(exchange_id, symbol, timeframe="1h", limit=120):
     return D(str(ticker["last"])), rows
 
 
-def ai_gate_for_setup(exchange_id, symbol, timeframe, signal, price, regime, ema9, ema21, rsi, atr, atr_pct, max_bar_pct, volatility_ok, portfolio):
+def ai_gate_for_setup(conn, exchange_id, symbol, timeframe, signal, price, regime, ema9, ema21, rsi, atr, atr_pct, max_bar_pct, volatility_ok, portfolio):
     report = build_report(exchange_id, symbol, portfolio=portfolio, risk={
         "volatility_ok": volatility_ok,
         "max_stop_distance": str(PaperLimits().max_stop_distance),
@@ -207,12 +223,20 @@ def ai_gate_for_setup(exchange_id, symbol, timeframe, signal, price, regime, ema
     try:
         result = evaluate_setup(context)
         exit_safe_mode()
+        conn.execute(
+            "UPDATE zerqen_paper_state SET ai_mode='auto', ai_degraded_until=NULL, ai_last_ok_at=%s, ai_last_error=NULL, ai_last_model=%s, ai_last_confidence=%s, ai_report_hash=%s, updated_at=%s WHERE account_id='default'",
+            (now(), result.get("model"), result.get("confidence"), report.report_hash, now()),
+        )
         return result, False, report
     except FreeOnlyViolation:
         raise
     except Exception as exc:
         enter_safe_mode(str(exc))
         if should_use_safe_mode():
+            conn.execute(
+                "UPDATE zerqen_paper_state SET ai_mode='safe_mode', ai_degraded_until=%s, ai_last_error=%s, ai_safe_mode_entries=ai_safe_mode_entries+1, ai_report_hash=%s, updated_at=%s WHERE account_id='default'",
+                (datetime.fromtimestamp(float(os.environ["ZERQEN_AI_DEGRADED_UNTIL"]), tz=timezone.utc), str(exc)[:300], report.report_hash, now()),
+            )
             return {
                 "enabled": True, "decision": signal, "confidence": 0.0,
                 "reason": "AI unavailable; deterministic paper safe mode active",
@@ -626,7 +650,7 @@ class handler(BaseHTTPRequestHandler):
                             if os.getenv("OPENROUTER_API_KEY"):
                                 try:
                                     ai_result, safe_mode_used, intelligence_report = ai_gate_for_setup(
-                                        exchange_id, symbol, timeframe, signal_side, prices[symbol],
+                                        conn, exchange_id, symbol, timeframe, signal_side, prices[symbol],
                                         regime, e9[-1], e21[-1], rsi, atr, vol.get("atr_pct"),
                                         vol.get("max_bar_pct"), volatility_ok,
                                         {"equity":str(eq),"daily_pnl":str(daily),"drawdown":str(dd),
@@ -700,7 +724,7 @@ class handler(BaseHTTPRequestHandler):
                         if os.getenv("OPENROUTER_API_KEY"):
                             try:
                                 ai_result, safe_mode_used, intelligence_report = ai_gate_for_setup(
-                                    exchange_id, symbol, timeframe, side.upper(), price,
+                                    conn, exchange_id, symbol, timeframe, side.upper(), price,
                                     regime, e9[-1], e21[-1], rsi, atr, vol.get("atr_pct"),
                                     vol.get("max_bar_pct"), bool(vol.get("ok")),
                                     {"equity":str(eq if 'eq' in locals() else D(str(state[2])))},
