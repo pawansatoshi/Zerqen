@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/paper",
+      "destination": "/api/paper_runtime"
+    },
+    {
+      "source": "/api/paper/",
+      "destination": "/api/paper_runtime"
+    }
+  ]
+}
