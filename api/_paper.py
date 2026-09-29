@@ -9,7 +9,7 @@ from decimal import Decimal as D
 from http.server import BaseHTTPRequestHandler
 from datetime import datetime, timezone
 
-from zerqen.paper_engine import PaperLimits, Position, apply_fill, check_portfolio_risk, compounding_equity, size_for_risk
+from zerqen.paper_engine import (PaperLimits, Position, apply_fill, check_portfolio_risk, compounding_equity, size_for_risk, volatility_profile, classify_regime, dynamic_structural_stop)
 from zerqen.strategy_registry import eligible_strategies
 
 
@@ -51,6 +51,10 @@ def db():
             exchange_id TEXT NOT NULL DEFAULT 'binance',
             symbol TEXT NOT NULL DEFAULT 'BTC/USDT',
             timeframe TEXT NOT NULL DEFAULT '1h',
+            market_type TEXT NOT NULL DEFAULT 'spot',
+            daily_target_hit BOOLEAN NOT NULL DEFAULT FALSE,
+            consecutive_losses INTEGER NOT NULL DEFAULT 0,
+            cooldown_until TIMESTAMPTZ,
             last_marked_at TIMESTAMPTZ,
             updated_at TIMESTAMPTZ NOT NULL
         )
@@ -59,6 +63,10 @@ def db():
     conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS exchange_id TEXT NOT NULL DEFAULT 'binance'")
     conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS symbol TEXT NOT NULL DEFAULT 'BTC/USDT'")
     conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS timeframe TEXT NOT NULL DEFAULT '1h'")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS market_type TEXT NOT NULL DEFAULT 'spot'")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS daily_target_hit BOOLEAN NOT NULL DEFAULT FALSE")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS consecutive_losses INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE zerqen_paper_state ADD COLUMN IF NOT EXISTS cooldown_until TIMESTAMPTZ")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS zerqen_paper_orders (
             client_order_id TEXT PRIMARY KEY,
@@ -109,6 +117,10 @@ def db():
             PRIMARY KEY(account_id, symbol)
         )
     """)
+    conn.execute("ALTER TABLE zerqen_paper_positions ADD COLUMN IF NOT EXISTS stop_price NUMERIC")
+    conn.execute("ALTER TABLE zerqen_paper_positions ADD COLUMN IF NOT EXISTS target_price NUMERIC")
+    conn.execute("ALTER TABLE zerqen_paper_positions ADD COLUMN IF NOT EXISTS risk_at_entry NUMERIC NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE zerqen_paper_positions ADD COLUMN IF NOT EXISTS position_id TEXT")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS zerqen_paper_equity_snapshots (
             id BIGSERIAL PRIMARY KEY,
@@ -143,7 +155,7 @@ def now():
 
 def get_state(conn):
     row = conn.execute(
-        "SELECT account_id, starting_equity, cash, realized_pnl, fees, funding, slippage, peak_equity, day_start_equity, halted, flatten_requested, paused, exchange_id, symbol, timeframe, last_marked_at, updated_at FROM zerqen_paper_state WHERE account_id='default'"
+        "SELECT account_id, starting_equity, cash, realized_pnl, fees, funding, slippage, peak_equity, day_start_equity, halted, flatten_requested, paused, exchange_id, symbol, timeframe, market_type, daily_target_hit, consecutive_losses, cooldown_until, last_marked_at, updated_at FROM zerqen_paper_state WHERE account_id='default'"
     ).fetchone()
     return row
 
@@ -301,6 +313,11 @@ def status_payload(conn):
         "exchange_id": str(state[12]),
         "symbol": str(state[13]),
         "timeframe": str(state[14]),
+        "market_type": str(state[15]),
+        "daily_target_hit": bool(state[16]),
+        "consecutive_losses": int(state[17]),
+        "cooldown_until": state[18].isoformat() if state[18] else None,
+        "daily_target": float(D(str(state[8])) * PaperLimits().daily_target),
         "prices": {k: float(v) for k,v in prices.items()},
         "positions": [
             {"symbol":r[0],"side":r[1],"quantity":float(r[2]),"average_entry":float(r[3]),"fees":float(r[4]),"funding":float(r[5]),"realized_pnl":float(r[6])}
@@ -334,6 +351,15 @@ def event(conn, event_type, payload):
     return event_id
 
 
+
+def enforce_daily_target(conn, state, daily_pnl):
+    target = D(str(state[8])) * PaperLimits().daily_target
+    if daily_pnl >= target and not bool(state[16]):
+        conn.execute("UPDATE zerqen_paper_state SET daily_target_hit=TRUE,paused=TRUE,updated_at=%s WHERE account_id='default'",(now(),))
+        event(conn,"DAILY_8_PERCENT_TARGET_HIT",{"day_start_equity":str(state[8]),"target":str(target),"daily_pnl":str(daily_pnl)})
+        return True
+    return bool(state[16])
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not auth_ok(self):
@@ -363,12 +389,15 @@ class handler(BaseHTTPRequestHandler):
                     exchange_id=str(data.get("exchange_id","binance"))
                     symbol=str(data.get("symbol","BTC/USDT"))
                     timeframe=str(data.get("timeframe","1h"))
+                    market_type=str(data.get("market_type","spot")).lower()
+                    if market_type != "spot":
+                        return send(self,400,{"ok":False,"error":"only SPOT paper trading is enabled; futures remains locked"})
                     if exchange_id not in {"binance","okx","bybit","bitget","mexc","kucoin","gate","delta_india","coindcx","wazirx"}:
                         return send(self,400,{"ok":False,"error":"unsupported paper market exchange"})
                     if timeframe not in {"1h","4h","1d","1w"}:
                         return send(self,400,{"ok":False,"error":"unsupported paper timeframe"})
                     fetch_public_market(exchange_id, symbol, timeframe, 60)
-                    conn.execute("INSERT INTO zerqen_paper_state(account_id,starting_equity,cash,peak_equity,day_start_equity,exchange_id,symbol,timeframe,updated_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s,%s)",(capital,capital,capital,capital,exchange_id,symbol,timeframe,t))
+                    conn.execute("INSERT INTO zerqen_paper_state(account_id,starting_equity,cash,peak_equity,day_start_equity,exchange_id,symbol,timeframe,updated_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s,%s,%s)",(capital,capital,capital,capital,exchange_id,symbol,timeframe,market_type,t))
                     event(conn,"PAPER_INITIALIZED",{"starting_capital":str(capital),"exchange_id":exchange_id,"symbol":symbol,"timeframe":timeframe})
                     snapshot(conn,{symbol: fetch_public_market(exchange_id,symbol,timeframe,20)[0]})
                     conn.commit()
@@ -432,6 +461,8 @@ class handler(BaseHTTPRequestHandler):
                         return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
                     if bool(state[9]):
                         return send(self,409,{"ok":False,"error":"HALT NEW ORDERS is active"})
+                    if bool(state[16]):
+                        return send(self,409,{"ok":False,"error":"DAILY 8% TARGET HIT — new entries locked"})
                     exchange_id=str(state[12])
                     symbol=str(data.get("symbol_override", state[13])).strip().upper()
                     timeframe=str(state[14])
@@ -442,8 +473,13 @@ class handler(BaseHTTPRequestHandler):
                     for symbol in prices:
                         rows=fetch_candles(exchange_id,symbol,timeframe)
                         _,e9,e21,atr,rsi=indicators(rows)
-                        regime="trend_up" if e9[-1]>e21[-1] else "range"
-                        signal=e9[-1]>e21[-1] and e9[-2]<=e21[-2] and D(50)<=rsi<=D(75)
+                        vol=volatility_profile(rows)
+                        regime=classify_regime([D(str(r[4])) for r in rows],e9,e21,rsi)
+                        signal_buy=e9[-1]>e21[-1] and e9[-2]<=e21[-2] and D(50)<=rsi<=D(75)
+                        signal_sell=e9[-1]<e21[-1] and e9[-2]>=e21[-2] and D(25)<=rsi<=D(50)
+                        signal=signal_buy or signal_sell
+                        signal_side="BUY" if signal_buy else ("SELL" if signal_sell else "NONE")
+                        volatility_ok=bool(vol.get("ok")) and vol["atr_pct"]<=PaperLimits().max_atr_pct and vol["max_bar_pct"]<=PaperLimits().max_bar_pct
                         signal_id="signal-"+uuid.uuid4().hex
                         values=equity(conn,prices)
                         eq,_,gross,dd,daily=values if values else (D(str(state[2])),D(0),D(0),D(0),D(0))
@@ -456,11 +492,14 @@ class handler(BaseHTTPRequestHandler):
                         elif not candidates:
                             risk_decision="REJECTED"
                             reason="insufficient evidence"
+                        elif not volatility_ok:
+                            risk_decision="REJECTED"
+                            reason="volatility protection filter rejected asset"
                         else:
                             risk_decision="APPROVED"
                             reason="strategy signal passed demo risk gate"
                         record_decision(conn,state,signal_id=signal_id,strategy="baseline_trend",regime=regime,
-                                        signal_timestamp=now(),signal_direction="BUY" if signal else "NONE",
+                                        signal_timestamp=now(),signal_direction=signal_side,
                                         ema9=e9[-1],ema21=e21[-1],rsi=rsi,atr=atr,
                                         risk_per_trade=PaperLimits().risk_per_trade,
                                         aggregate_open_risk=PaperLimits().aggregate_open_risk,
@@ -468,7 +507,7 @@ class handler(BaseHTTPRequestHandler):
                                         gross_exposure=gross,allocation=allocation,risk_decision=risk_decision,
                                         rejected=(risk_decision != "APPROVED"),rejection_reason=None if risk_decision == "APPROVED" else reason)
                         event(conn,"STRATEGY_DECISION",{"signal_id":signal_id,"symbol":symbol,"strategy":"baseline_trend",
-                                                       "regime":regime,"signal":signal,"risk_decision":risk_decision,
+                                                       "regime":regime,"signal":signal,"signal_direction":signal_side,"risk_decision":risk_decision,
                                                        "rejected":risk_decision != "APPROVED","reason":reason})
                     snapshot(conn,prices)
                     conn.commit()
@@ -488,18 +527,26 @@ class handler(BaseHTTPRequestHandler):
                         return send(self,400,{"ok":False,"error":"side must be buy or sell"})
                     if bool(state[11]):
                         return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
+                    if bool(state[16]):
+                        return send(self,409,{"ok":False,"error":"DAILY 8% TARGET HIT — new entries locked"})
                     prices=fetch_prices(exchange_id,[symbol],timeframe)
                     price=prices[symbol]
                     rows=fetch_candles(exchange_id,symbol,timeframe)
                     _,e9,e21,atr,rsi=indicators(rows)
+                    vol=volatility_profile(rows)
+                    if not vol.get("ok") or vol["atr_pct"] > PaperLimits().max_atr_pct or vol["max_bar_pct"] > PaperLimits().max_bar_pct:
+                        return send(self,409,{"ok":False,"error":"volatility protection rejected this asset"})
+                    structural_stop=dynamic_structural_stop(rows,side,price,atr)
                     values=equity(conn,prices)
                     eq=values[0] if values else D(str(state[2]))
                     realized_net_base=compounding_equity(D(str(state[1])), D(str(state[3])))
-                    risk=size_for_risk(realized_net_base,price,atr,PaperLimits(),side)
+                    risk=size_for_risk(realized_net_base,price,atr,PaperLimits(),side,structural_stop)
                     qty=D(str(data.get("quantity",risk.quantity)))
                     if qty<=0:
                         return send(self,400,{"ok":False,"error":"quantity must be positive"})
                     positions=fetch_positions(conn)
+                    if any(p.symbol == symbol and p.side == side for p in positions):
+                        return send(self,409,{"ok":False,"error":"duplicate same-direction exposure rejected"})
                     limits=PaperLimits()
                     proposed_notional=qty*price
                     if proposed_notional > realized_net_base*limits.max_strategy_allocation:
@@ -627,6 +674,8 @@ class handler(BaseHTTPRequestHandler):
                                                      "quantity":str(qty),"price":str(fill_price),"fee":str(fee),"slippage":str(slip*qty)})
                     post_prices=fetch_prices(exchange_id,[symbol],timeframe)
                     snapshot_values=snapshot(conn,post_prices)
+                    if snapshot_values:
+                        enforce_daily_target(conn,get_state(conn),snapshot_values[4])
                     if closing_trade and snapshot_values:
                         audit_id=event(conn,"PAPER_TRADE_CLOSED",{"trade_id":closing_trade["trade_id"],"decision_id":decision_id,
                                                                     "position_id":closing_trade["position_id"],"order_id":oid,
