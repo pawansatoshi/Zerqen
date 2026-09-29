@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from zerqen.paper_engine import (PaperLimits, Position, apply_fill, check_portfolio_risk, size_for_risk, volatility_profile, classify_regime, dynamic_structural_stop)
 from zerqen.strategy_registry import eligible_strategies
+from zerqen.openrouter_agent import FreeOnlyViolation, evaluate_setup
 
 
 def send(handler, status, payload):
@@ -574,6 +575,7 @@ class handler(BaseHTTPRequestHandler):
                         open_positions=len(fetch_positions(conn))
                         allocation=D(0) if eq<=0 else gross/eq
                         candidates=eligible_strategies(regime)
+                        ai_result={"enabled":False,"decision":"HOLD","confidence":0.0,"reason":"AI gate not configured","model":None,"risk_flags":[],"attempts":[]}
                         if not signal:
                             risk_decision="REJECTED"
                             reason="no valid setup"
@@ -585,7 +587,34 @@ class handler(BaseHTTPRequestHandler):
                             reason="volatility protection filter rejected asset"
                         else:
                             risk_decision="APPROVED"
-                            reason="strategy signal passed demo risk gate"
+                            reason="strategy signal passed deterministic risk gate"
+                            if os.getenv("OPENROUTER_API_KEY"):
+                                try:
+                                    ai_result=evaluate_setup({
+                                        "symbol":symbol,"timeframe":timeframe,"price":str(prices[symbol]),
+                                        "signal":signal_side,"regime":regime,"ema9":str(e9[-1]),"ema21":str(e21[-1]),
+                                        "rsi":str(rsi),"atr":str(atr),"atr_pct":str(vol.get("atr_pct")),
+                                        "max_bar_pct":str(vol.get("max_bar_pct")),"volatility_ok":volatility_ok,
+                                        "equity":str(eq),"daily_pnl":str(daily),"drawdown":str(dd),
+                                        "gross_exposure":str(gross),"open_positions":open_positions,
+                                        "risk_per_trade":str(PaperLimits().risk_per_trade),
+                                        "max_stop_distance":str(PaperLimits().max_stop_distance),
+                                        "min_risk_reward":str(PaperLimits().min_risk_reward),
+                                    })
+                                    min_conf=float(os.getenv("ZERQEN_AI_MIN_CONFIDENCE","0.60"))
+                                    ai_side=str(ai_result.get("decision","HOLD")).upper()
+                                    flags=ai_result.get("risk_flags") or []
+                                    if ai_side != signal_side or float(ai_result.get("confidence",0)) < min_conf or flags:
+                                        risk_decision="REJECTED"
+                                        reason="AI gate rejected setup"
+                                except FreeOnlyViolation as exc:
+                                    risk_decision="REJECTED"
+                                    reason="AI free-only safety violation"
+                                    ai_result={"enabled":True,"decision":"HOLD","confidence":0.0,"reason":str(exc),"model":None,"risk_flags":["FREE_ONLY_VIOLATION"],"attempts":[]}
+                                except Exception as exc:  # noqa: BLE001
+                                    risk_decision="REJECTED"
+                                    reason="AI gate unavailable"
+                                    ai_result={"enabled":True,"decision":"HOLD","confidence":0.0,"reason":str(exc)[:300],"model":None,"risk_flags":["AI_UNAVAILABLE"],"attempts":[]}
                         record_decision(conn,state,signal_id=signal_id,strategy="baseline_trend",regime=regime,
                                         signal_timestamp=now(),signal_direction=signal_side,
                                         ema9=e9[-1],ema21=e21[-1],rsi=rsi,atr=atr,
@@ -596,7 +625,11 @@ class handler(BaseHTTPRequestHandler):
                                         rejected=(risk_decision != "APPROVED"),rejection_reason=None if risk_decision == "APPROVED" else reason)
                         event(conn,"STRATEGY_DECISION",{"signal_id":signal_id,"symbol":symbol,"strategy":"baseline_trend",
                                                        "regime":regime,"signal":signal,"signal_direction":signal_side,"risk_decision":risk_decision,
-                                                       "rejected":risk_decision != "APPROVED","reason":reason})
+                                                       "rejected":risk_decision != "APPROVED","reason":reason,
+                                                       "ai_enabled":ai_result.get("enabled"),"ai_decision":ai_result.get("decision"),
+                                                       "ai_confidence":ai_result.get("confidence"),"ai_model":ai_result.get("model"),
+                                                       "ai_reason":ai_result.get("reason"),"ai_risk_flags":ai_result.get("risk_flags"),
+                                                       "ai_attempts":ai_result.get("attempts")})
                     snapshot(conn,prices)
                     conn.commit()
                     return send(self,200,status_payload(conn))
