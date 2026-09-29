@@ -210,7 +210,7 @@ def ai_gate_for_setup(exchange_id, symbol, timeframe, signal, price, regime, ema
         return result, False, report
     except FreeOnlyViolation:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         enter_safe_mode(str(exc))
         if should_use_safe_mode():
             return {
