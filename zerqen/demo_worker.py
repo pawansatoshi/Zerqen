@@ -35,6 +35,32 @@ def post_paper_cycle() -> dict:
     return api_call("/api/paper", {"action": "cycle"})
 
 
+def execute_approved_signal(cycle: dict) -> dict | None:
+    """Convert an AI-approved strategy decision into a simulated paper fill."""
+    if not cycle.get("ok"):
+        return None
+    events = cycle.get("events") or []
+    approved = next(
+        (
+            e for e in events
+            if e.get("type") == "STRATEGY_DECISION"
+            and (e.get("payload") or {}).get("risk_decision") == "APPROVED"
+        ),
+        None,
+    )
+    if not approved:
+        return None
+    payload = approved.get("payload") or {}
+    side = str(payload.get("signal_direction", "")).lower()
+    symbol = str(payload.get("symbol", "")).strip()
+    if side not in {"buy", "sell"} or not symbol:
+        return {"ok": False, "error": "approved signal missing side or symbol"}
+    return api_call(
+        "/api/paper",
+        {"action": "test_order", "symbol": symbol, "side": side, "automatic": True},
+    )
+
+
 def main() -> None:
     print(
         f"zerqen demo worker started at {datetime.now(timezone.utc).isoformat()} "
@@ -50,9 +76,13 @@ def main() -> None:
             else:
                 heartbeat = api_call("/api/demo-worker", {"action": "heartbeat"})
                 result = post_paper_cycle()
+                execution = execute_approved_signal(result)
                 print(
                     datetime.now(timezone.utc).isoformat(),
-                    json.dumps({"heartbeat": heartbeat, "cycle": result}, default=str)[:4000],
+                    json.dumps(
+                        {"heartbeat": heartbeat, "cycle": result, "execution": execution},
+                        default=str,
+                    )[:5000],
                     flush=True,
                 )
         except Exception as exc:  # noqa: BLE001

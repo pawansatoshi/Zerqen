@@ -1,0 +1,18 @@
+[Unit]
+Description=Zerqen persistent paper trading worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zerqen
+EnvironmentFile=/etc/zerqen/worker.env
+ExecStart=/usr/bin/python3 -m zerqen.demo_worker
+Restart=always
+RestartSec=10
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
