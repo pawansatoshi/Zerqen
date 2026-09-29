@@ -494,6 +494,9 @@ class handler(BaseHTTPRequestHandler):
                     return send(self,200,status_payload(conn))
 
                 if action=="resume":
+                    state=get_state(conn)
+                    if state and bool(state[16]):
+                        return send(self,409,{"ok":False,"error":"daily 8% target already hit; resume is locked until next trading day"})
                     conn.execute("UPDATE zerqen_paper_state SET paused=FALSE,updated_at=%s WHERE account_id='default'",(now(),))
                     event(conn,"PAPER_RESUMED",{"source":"operator"})
                     conn.commit()
