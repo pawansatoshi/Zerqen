@@ -252,7 +252,7 @@ def demo_worker_get(x_zerqen_dashboard_token: str | None = Header(default=None))
     from api.demo_worker import worker_status
     try:
         return {"ok": True, **worker_status()}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=503)
 
 
