@@ -161,6 +161,7 @@ document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",(
 function openConnections(){showView("connections");openModal();loadConnections()}
 function closeModal(){$("connectionModal").classList.remove("open")}
 function openModal(){$("connectionModal").classList.add("open")}
+function openModalFor(exchangeId){openModal();$("exchange").value=exchangeId}
 function fillExchanges(){const s=$("exchange");if(!s)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)))}
 function token(){return $("token")?.value||sessionStorage.getItem("zerqen_token")||""}
 async function api(path,options={}){const headers=Object.assign({},options.headers||{},{"x-zerqen-dashboard-token":token()});return fetch(path,Object.assign({},options,{headers}))}
@@ -176,7 +177,8 @@ async function loadConnections(){
   const list=$("connectionsList");if(!list)return;list.innerHTML="<div class='card empty'>Loading connections…</div>";
   if(!token()){list.innerHTML="<div class='card empty'>Connect an exchange to begin. Server secrets are not entered here.</div>";return}
   try{const res=await api("/api/credentials");const d=await res.json();if(!d.ok){list.innerHTML="<div class='card empty'>Authentication required to view connections.</div>";return}
-  list.innerHTML=d.connections.length?d.connections.map(c=>{const ex=exchanges.find(x=>x[0]===c.exchange_id)||[c.exchange_id,c.exchange_id,"?"];return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='live'><i class='dot'></i> encrypted · "+c.mode+" · "+new Date(c.updated_at).toLocaleString()+"</span></div></div></div><button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Disconnect</button></div>"}).join(""):"<div class='card empty'>No exchange connections saved yet.</div>";
+  const saved=new Map((d.connections||[]).map(x=>[x.exchange_id,x]));
+  list.innerHTML=exchanges.map(ex=>{const c=saved.get(ex[0]);const state=c?"CONNECTED":"NOT CONNECTED";const meta=c?"encrypted · "+c.mode+" · "+new Date(c.updated_at).toLocaleString():"no verified credential saved";const action=c?"<button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Disconnect</button>":"<button class='connect-btn' onclick="openModalFor('"+ex[0]+"')">Connect</button>";return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='badge'>"+state+"</span> · "+meta+"</div></div></div>"+action+"</div>"}).join("");
   if(d.connections.length){activeExchange=d.connections[0].exchange_id;loadAccount(activeExchange)}
   }catch(e){list.innerHTML="<div class='card empty'>Connection service unavailable.</div>"}
 }
