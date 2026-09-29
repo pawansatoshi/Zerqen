@@ -277,6 +277,20 @@ def backtest_health():
     return {"ok": True, "mode": "BACKTEST", "markets": ["spot", "futures"], "live_trading": False}
 
 
+@app.get("/api/ai/status")
+def ai_status(x_zerqen_dashboard_token: str | None = Header(default=None)):
+    require_dashboard_token(x_zerqen_dashboard_token)
+    from zerqen.openrouter_agent import health
+    return health()
+
+
+@app.get("/api/ai/models")
+def ai_models(x_zerqen_dashboard_token: str | None = Header(default=None)):
+    require_dashboard_token(x_zerqen_dashboard_token)
+    from zerqen.openrouter_agent import REGISTRY
+    return {"ok": True, "free_only": True, **REGISTRY.snapshot()}
+
+
 @app.get("/api/fx")
 def fx(base: str = Query("USD"), quote: str = Query("INR")):
     if base == quote:
