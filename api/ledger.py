@@ -177,7 +177,7 @@ def _daily(conn, date_from=None, date_to=None):
                MAX(drawdown) AS drawdown, MAX(daily_pnl) AS daily_pnl
         FROM zerqen_paper_equity_snapshots
         WHERE account_id='default' AND (%s IS NULL OR created_at::date >= %s)
-          AND (%s IS NULL OR created_at::date < %s)
+          AND (%s IS NULL OR created_at::date <= %s)
         GROUP BY created_at::date ORDER BY day
     """,(date_from,date_from,date_to,date_to)).fetchall()
     out=[]
@@ -250,6 +250,7 @@ def ledger(
                 WHERE account_id='default' ORDER BY created_at DESC LIMIT 2000""",[])
             state=conn.execute("""SELECT starting_equity,cash,realized_pnl,fees,funding,slippage,halted,paused,exchange_id,symbol,timeframe FROM zerqen_paper_state WHERE account_id='default'""").fetchone()
             latest=conn.execute("SELECT equity,unrealized_pnl,drawdown,gross_exposure,open_risk,allocation FROM zerqen_paper_equity_snapshots WHERE account_id='default' ORDER BY created_at DESC LIMIT 1").fetchone()
+            max_dd=conn.execute("SELECT COALESCE(MAX(drawdown),0) FROM zerqen_paper_equity_snapshots WHERE account_id='default'").fetchone()[0]
             account={
                 "initialized":bool(state),
                 "starting_capital":float(state[0]) if state else 0,
@@ -261,9 +262,10 @@ def ledger(
                 "fees":float(state[3]) if state else 0,
                 "funding":float(state[4]) if state else 0,
                 "slippage":float(state[5]) if state else 0,
-                "net_pnl":float(state[2])-float(state[5]) if state else 0,
+                "net_pnl":float(latest[0]-state[0]) if state and latest else 0,
                 "actual_return":float((latest[0]-state[0])/state[0]) if state and latest and state[0] else 0,
                 "drawdown":float(latest[2]) if latest else 0,
+                "max_drawdown":float(max_dd or 0),
                 "gross_exposure":float(latest[3]) if latest else 0,
                 "open_risk":float(latest[4]) if latest else 0,
                 "allocation":float(latest[5]) if latest else 0,
