@@ -40,6 +40,45 @@ def classify_error(exc):
     return "FAILED", name
 
 
+def _native_binance_probe(symbol, timeframe, limit):
+    profile = get_exchange("binance")
+    adapter = create_exchange_adapter("binance", testnet=False)
+    base_symbol = symbol.replace("/", "").upper()
+    info = _http_json("https://api.binance.com/api/v3/exchangeInfo")
+    market = next((m for m in info.get("symbols", []) if str(m.get("symbol", "")).upper() == base_symbol), None)
+    if not market or market.get("status") != "TRADING":
+        return {"ok": False, "connectivity_status": "NOT_SUPPORTED", "exchange": "binance", "adapter": type(adapter).__name__, "profile": profile.display_name, "public_api": adapter.endpoint, "symbol": symbol, "symbol_mapping": False, "ticker": False, "ohlcv": False, "error_type": "BadSymbol", "error_stage": "symbol_mapping"}
+    ticker_raw = _http_json("https://api.binance.com/api/v3/ticker/24hr?" + urllib.parse.urlencode({"symbol": base_symbol}))
+    ticker = {"last": float(ticker_raw["lastPrice"]), "bid": float(ticker_raw["bidPrice"]), "ask": float(ticker_raw["askPrice"]), "change": float(ticker_raw.get("priceChangePercent", 0)), "quote_volume": float(ticker_raw.get("quoteVolume", 0)), "timestamp": int(ticker_raw.get("closeTime", 0))}
+    rows = _http_json("https://api.binance.com/api/v3/klines?" + urllib.parse.urlencode({"symbol": base_symbol, "interval": timeframe, "limit": limit}))
+    return _native_result("binance", adapter, profile, symbol, rows, ticker)
+
+
+def _native_bybit_probe(symbol, timeframe, limit):
+    profile = get_exchange("bybit")
+    adapter = create_exchange_adapter("bybit", testnet=False)
+    base_symbol = symbol.replace("/", "").upper()
+    interval = {"1h": "60", "4h": "240", "1d": "D", "1w": "W"}.get(timeframe)
+    if interval is None:
+        return {"ok": False, "connectivity_status": "NOT_SUPPORTED", "exchange": "bybit", "adapter": type(adapter).__name__, "profile": profile.display_name, "public_api": adapter.endpoint, "symbol": symbol, "symbol_mapping": False, "ticker": False, "ohlcv": False, "error_type": "UnsupportedTimeframe", "error_stage": "symbol_mapping"}
+    instrument = _http_json("https://api.bybit.com/v5/market/instruments-info?" + urllib.parse.urlencode({"category": "spot", "symbol": base_symbol, "limit": 1}))
+    items = ((instrument.get("result") or {}).get("list") or [])
+    market = next((m for m in items if str(m.get("symbol", "")).upper() == base_symbol and m.get("status", "Trading") == "Trading"), None)
+    if not market:
+        return {"ok": False, "connectivity_status": "NOT_SUPPORTED", "exchange": "bybit", "adapter": type(adapter).__name__, "profile": profile.display_name, "public_api": adapter.endpoint, "symbol": symbol, "symbol_mapping": False, "ticker": False, "ohlcv": False, "error_type": "BadSymbol", "error_stage": "symbol_mapping"}
+    tickers = _http_json("https://api.bybit.com/v5/market/tickers?" + urllib.parse.urlencode({"category": "spot", "symbol": base_symbol}))
+    ticker_list = ((tickers.get("result") or {}).get("list") or [])
+    if not ticker_list:
+        return {"ok": False, "connectivity_status": "DEGRADED", "exchange": "bybit", "adapter": type(adapter).__name__, "profile": profile.display_name, "public_api": adapter.endpoint, "symbol": symbol, "symbol_mapping": True, "ticker": False, "ohlcv": False, "error_type": "NoTicker", "error_stage": "fetch_ticker"}
+    t = ticker_list[0]
+    ticker = {"last": float(t["lastPrice"]), "bid": float(t.get("bid1Price") or 0), "ask": float(t.get("ask1Price") or 0), "change": float(t.get("price24hPcnt") or 0) * 100, "quote_volume": float(t.get("turnover24h") or 0), "timestamp": None}
+    data = _http_json("https://api.bybit.com/v5/market/kline?" + urllib.parse.urlencode({"category": "spot", "symbol": base_symbol, "interval": interval, "limit": limit}))
+    rows_raw = ((data.get("result") or {}).get("list") or [])
+    rows = [[int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])] for r in rows_raw]
+    return _native_result("bybit", adapter, profile, symbol, rows, ticker)
+
+
+
 def public_market_probe(exchange_id, symbol, timeframe, limit):
     profile = get_exchange(exchange_id)
     adapter = create_exchange_adapter(exchange_id, testnet=False) if exchange_id in {"binance", "bybit", "delta_india"} else create_exchange_adapter(exchange_id)
