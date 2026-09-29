@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 from dataclasses import dataclass
-from .exchanges import ExchangeId, get_exchange
+from .exchanges import EXCHANGE_PROFILES, ExchangeId, get_exchange
 
 @dataclass(frozen=True)
 class ExchangeCredentials:
