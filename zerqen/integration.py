@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from .kill_switch import KillSwitch
 from .mode import TradingMode
-from .orders import Order, OrderSide
+from .orders import Order
 from .portfolio_risk import portfolio_risk_check
 from .live_guard import LiveLimits, authorize_order
 
