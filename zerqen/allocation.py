@@ -31,13 +31,22 @@ def allocate_by_score(
     }
     if not clean:
         return ()
-    total = sum(clean.values())
-    raw = {name: value / total for name, value in clean.items()}
-    capped = {name: min(weight, max_strategy_weight) for name, weight in raw.items()}
-    used = sum(capped.values())
-    if used <= 0:
-        return ()
-    normalized = {name: weight / used for name, weight in capped.items()}
+    remaining = set(clean)
+    normalized: dict[str, float] = {}
+    remaining_weight = 1.0
+    while remaining:
+        total = sum(clean[name] for name in remaining)
+        proposed = {name: remaining_weight * clean[name] / total for name in remaining}
+        capped_now = {name for name, weight in proposed.items() if weight > max_strategy_weight}
+        if not capped_now:
+            normalized.update(proposed)
+            break
+        for name in capped_now:
+            normalized[name] = max_strategy_weight
+            remaining.remove(name)
+            remaining_weight -= max_strategy_weight
+        if remaining_weight < -1e-12:
+            raise ValueError("max_strategy_weight cannot satisfy allocation")
     return tuple(
         StrategyAllocation(name, clean[name], normalized[name], equity * normalized[name])
         for name in sorted(normalized)
