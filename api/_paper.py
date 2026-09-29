@@ -374,6 +374,69 @@ def enforce_daily_target(conn, state, daily_pnl):
         return True
     return bool(state[16])
 
+
+def manage_protective_exits(conn, state, prices):
+    closed = []
+    for p in fetch_positions(conn):
+        price = prices.get(p.symbol)
+        if price is None:
+            continue
+        raw = conn.execute("""SELECT position_id,side,quantity,average_entry,stop_price,target_price,fees,funding,
+                                     entry_order_id,entry_fill_id,opened_at,strategy,regime,risk_at_entry,opening_equity
+                              FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s""",(p.symbol,)).fetchone()
+        if not raw:
+            continue
+        stop = D(str(raw[4])) if raw[4] is not None else D(0)
+        target = D(str(raw[5])) if raw[5] is not None else D(0)
+        hit_stop = (p.side=="buy" and stop>0 and price<=stop) or (p.side=="sell" and stop>0 and price>=stop)
+        hit_target = (p.side=="buy" and target>0 and price>=target) or (p.side=="sell" and target>0 and price<=target)
+        if not (hit_stop or hit_target):
+            continue
+        reason = "STOP_LOSS" if hit_stop else "TAKE_PROFIT"
+        side = "sell" if p.side=="buy" else "buy"
+        qty = p.quantity
+        slip_per_unit = price*D("0.0005")
+        fill_price = price-slip_per_unit if side=="sell" else price+slip_per_unit
+        fee = fill_price*qty*D("0.001")
+        entry_fill = conn.execute("SELECT price,requested_price,slippage FROM zerqen_paper_fills WHERE fill_id=%s",(raw[9],)).fetchone() if raw[9] else None
+        entry_price = D(str(entry_fill[0])) if entry_fill and entry_fill[0] is not None else D(str(raw[3]))
+        entry_slippage = D(str(entry_fill[2] or 0)) if entry_fill else D(0)
+        direction = D(1) if p.side=="buy" else D(-1)
+        gross = (fill_price-entry_price)*qty*direction
+        net = gross-D(str(raw[6]))-D(str(raw[7]))-entry_slippage-(slip_per_unit*qty)-fee
+        oid="paper-exit-"+uuid.uuid4().hex
+        fid=str(uuid.uuid4())
+        t=now()
+        conn.execute("""INSERT INTO zerqen_paper_orders(client_order_id,account_id,symbol,side,order_type,quantity,price,stop_price,target_price,status,filled_quantity,average_price,strategy,regime,reason,created_at,updated_at,timeframe,risk_at_entry,opening_equity,signal_id,exchange_id)
+                       VALUES(%s,'default',%s,%s,'market',%s,%s,%s,%s,'FILLED',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                     (oid,p.symbol,side,qty,price,stop,target,qty,fill_price,raw[11],raw[12],reason,t,t,state[14],raw[13],raw[14],"auto-exit-"+uuid.uuid4().hex,state[12]))
+        conn.execute("""INSERT INTO zerqen_paper_fills(fill_id,client_order_id,account_id,symbol,side,quantity,price,requested_price,fee,funding,slippage,created_at)
+                       VALUES(%s,%s,'default',%s,%s,%s,%s,%s,%s,0,%s,%s)""",
+                     (fid,oid,p.symbol,side,qty,fill_price,price,fee,slip_per_unit*qty,t))
+        conn.execute("DELETE FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s",(p.symbol,))
+        cash_delta=(fill_price*qty-fee) if p.side=="buy" else (-fill_price*qty-fee)
+        conn.execute("UPDATE zerqen_paper_state SET cash=cash+%s,fees=fees+%s,slippage=slippage+%s,realized_pnl=realized_pnl+%s,updated_at=%s WHERE account_id='default'",
+                     (cash_delta,fee,slip_per_unit*qty,net,t))
+        decision_id=record_decision(conn,state,signal_id="auto-exit-"+uuid.uuid4().hex,strategy=str(raw[11]),regime=str(raw[12]),
+                                    signal_timestamp=t,signal_direction=side.upper(),ema9=D(0),ema21=D(0),rsi=D(0),atr=D(0),
+                                    risk_per_trade=PaperLimits().risk_per_trade,aggregate_open_risk=D(0),open_positions=max(0,len(fetch_positions(conn))-1),
+                                    daily_loss=D(0),drawdown=D(0),gross_exposure=D(0),allocation=D(0),risk_decision="APPROVED",rejected=False,order_id=oid)
+        trade_id="trade-"+uuid.uuid4().hex
+        risk_at_entry=D(str(raw[13] or 0))
+        r_mult=net/risk_at_entry if risk_at_entry>0 else D(0)
+        duration=int((t-raw[10]).total_seconds()) if raw[10] else None
+        conn.execute("""INSERT INTO zerqen_paper_trades(
+            trade_id,account_id,decision_id,position_id,equity_snapshot_id,audit_event_id,signal_id,
+            entry_order_id,exit_order_id,entry_fill_id,exit_fill_id,exchange_id,symbol,timeframe,side,
+            strategy,regime,signal_timestamp,entry_timestamp,exit_timestamp,entry_price,exit_price,quantity,
+            stop_price,target_price,risk_at_entry,gross_pnl,fees,slippage,funding,net_pnl,r_multiple,
+            opening_equity,closing_equity,status,duration_seconds
+        ) VALUES(%s,'default',%s,%s,NULL,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (trade_id,decision_id,raw[0],"auto-exit-"+uuid.uuid4().hex,raw[8],oid,raw[9],fid,state[12],p.symbol,state[14],p.side,raw[11],raw[12],t,raw[10] or t,entry_price,fill_price,qty,stop,target,risk_at_entry,gross,D(str(raw[6]))+fee,entry_slippage+slip_per_unit*qty,D(str(raw[7])),net,r_mult,D(str(raw[14] or state[8])),D(str(state[2])),"CLOSED",duration))
+        event(conn,"PROTECTIVE_EXIT_FILLED",{"symbol":p.symbol,"reason":reason,"side":p.side,"quantity":str(qty),"price":str(fill_price),"net_pnl":str(net)})
+        closed.append({"symbol":p.symbol,"reason":reason,"net_pnl":str(net)})
+    return closed
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not auth_ok(self):
@@ -485,6 +548,7 @@ class handler(BaseHTTPRequestHandler):
                         conn.execute("UPDATE zerqen_paper_state SET symbol=%s,updated_at=%s WHERE account_id='default'",(symbol,now()))
                         state=get_state(conn)
                     prices=fetch_prices(exchange_id,[symbol],timeframe)
+                    protective_exits=manage_protective_exits(conn,state,prices)
                     for symbol in prices:
                         rows=fetch_candles(exchange_id,symbol,timeframe)
                         _,e9,e21,atr,rsi=indicators(rows)
