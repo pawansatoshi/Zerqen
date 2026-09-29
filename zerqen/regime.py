@@ -45,3 +45,23 @@ def classify_regime(
     result.loc[down & (result != "high_volatility")] = "trend_down"
     result.loc[(~up & ~down) & (result != "high_volatility")] = "range"
     return result
+
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class RegimeState:
+    label: str
+    confidence: float
+    supporting_factors: tuple[str, ...]
+    timestamp: object | None = None
+
+
+def canonical_regime_label(label: str) -> str:
+    mapping = {
+        "trend_up": "TREND_UP", "trend_down": "TREND_DOWN", "range": "RANGE",
+        "high_volatility": "HIGH_VOLATILITY", "low_volatility": "LOW_VOLATILITY",
+        "breakout": "BREAKOUT", "unknown": "UNDEFINED",
+    }
+    return mapping.get(label, "UNDEFINED")
