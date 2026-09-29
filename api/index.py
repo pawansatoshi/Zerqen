@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -190,7 +191,15 @@ def health():
     token_configured = bool(os.environ.get("ZERQEN_DASHBOARD_TOKEN"))
     vault_configured = bool(os.environ.get("ZERQEN_VAULT_KEY"))
     database_configured = bool(os.environ.get("DATABASE_URL"))
-    configured = token_configured and vault_configured and database_configured
+    database_status = "NOT_CONFIGURED"
+    if database_configured:
+        try:
+            with get_db() as conn:
+                conn.execute("SELECT 1")
+            database_status = "CONNECTED"
+        except Exception:  # noqa: BLE001
+            database_status = "FAILED"
+    configured = token_configured and vault_configured and database_status == "CONNECTED"
     return {
         "ok": configured,
         "service": "zerqen",
@@ -201,6 +210,7 @@ def health():
             "dashboard_auth": token_configured,
             "credential_vault": vault_configured,
             "database": database_configured,
+            "database_status": database_status,
         },
         "time": datetime.now(timezone.utc).isoformat(),
     }
@@ -226,6 +236,53 @@ def market(
         raise
     except Exception:  # noqa: BLE001
         return safe_error("market data temporarily unavailable")
+
+
+@app.get("/api/exchange_status")
+def exchange_status():
+    from api.market import public_market_probe
+
+    def probe(exchange_id: str):
+        result = public_market_probe(exchange_id, "BTC/USDT", "1h", 20)
+        return {
+            "exchange": exchange_id,
+            "adapter": result.get("adapter"),
+            "profile": result.get("profile"),
+            "public_api": result.get("public_api"),
+            "symbol": result.get("symbol"),
+            "symbol_mapping": bool(result.get("symbol_mapping")),
+            "ticker": bool(result.get("ticker")),
+            "ohlcv": bool(result.get("ohlcv")),
+            "status": result.get("connectivity_status", "FAILED"),
+            "error_type": result.get("error_type"),
+            "error_http_status": result.get("error_http_status"),
+            "error_stage": result.get("error_stage"),
+        }
+
+    results = []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(probe, exchange_id): exchange_id for exchange_id in EXCHANGES}
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception as exc:  # noqa: BLE001
+                exchange_id = futures[future]
+                results.append({
+                    "exchange": exchange_id,
+                    "adapter": None,
+                    "profile": None,
+                    "public_api": None,
+                    "symbol": "BTC/USDT",
+                    "symbol_mapping": False,
+                    "ticker": False,
+                    "ohlcv": False,
+                    "status": "FAILED",
+                    "error_type": type(exc).__name__,
+                    "error_http_status": None,
+                    "error_stage": "probe",
+                })
+    results.sort(key=lambda item: item["exchange"])
+    return {"ok": True, "tested": len(results), "results": results}
 
 
 @app.get("/api/credentials")
