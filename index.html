@@ -99,7 +99,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
         <button class="secondary" onclick="paperCycle()">Run market cycle</button>
         <button class="secondary" onclick="paperTestOrder()">Run explicit execution test</button>
         <button class="secondary" onclick="paperHalt()">Halt new orders</button>
-        <button class="secondary" onclick="paperFlatten()">Flatten paper positions</button>
+        <button class="secondary" onclick="paperFlatten()">Flatten paper positions</button><button class="secondary" onclick="paperReset()">Reset paper account</button>
       </div>
       <div id="paperMessage" class="note">No paper account initialized.</div>
     </div></div>
@@ -290,6 +290,7 @@ async function paperCycle(){const r=await paperApi("cycle");const d=await r.json
 async function paperTestOrder(){const r=await paperApi("test_order",{symbol:"BTC/USDT",side:"buy"});const d=await r.json();renderPaper(d);toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
 async function paperHalt(){const r=await paperApi("halt");const d=await r.json();renderPaper(d);toast(d.ok?"HALT NEW ORDERS active":"Could not halt")}
 async function paperFlatten(){const r=await paperApi("flatten");const d=await r.json();renderPaper(d);toast(d.ok?"Paper positions flattened":"Flatten failed")}
+async function paperReset(){if(!confirm("Reset PAPER account only? This cannot affect exchange accounts, credentials, or production state."))return;const r=await paperApi("reset");const d=await r.json();renderPaper(d);toast(d.ok?"Paper account reset":"Reset failed")}
 
 function renderEquity(){const e=$("equityChart");if(e)e.innerHTML="<div class='empty'>No persisted equity snapshots yet. Live account value is shown after an exchange connection.</div>"}
 fillExchanges();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
