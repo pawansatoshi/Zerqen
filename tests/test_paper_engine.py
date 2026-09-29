@@ -1,7 +1,5 @@
 from decimal import Decimal as D
 
-import pytest
-
 from zerqen.paper_engine import (
     PaperLimits,
     Position,
