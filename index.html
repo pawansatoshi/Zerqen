@@ -225,7 +225,7 @@ async function loadConnections(){
     const publicState=pub?.status||"FAILED";
     const privateState=c?"CONNECTED":"NOT_CONFIGURED";
     const error=pub?.error_type?(pub.error_type+(pub.error_http_status?" · HTTP "+pub.error_http_status:"")):"public probe verified";
-    const action=c?"<button class='iconbtn' onclick="disconnect('"+c.exchange_id+"')">Remove</button>":"<button class='connect-btn' onclick="openModalFor('"+ex[0]+"')">Configure</button>";
+    const action=c?"<button class='iconbtn' onclick='disconnect(\\\""+c.exchange_id+"\\\")'>Remove</button>":"<button class='connect-btn' onclick='openModalFor(\\\""+ex[0]+"\\\")'>Configure</button>";
     return "<div class='connection'><div class='connection-left'><div class='exchange-logo'>"+ex[2]+"</div><div><div class='connection-name'>"+ex[1]+"</div><div class='connection-meta'><span class='badge'>PUBLIC "+publicState+"</span> · <span class='badge'>PRIVATE "+privateState+"</span><br>"+error+" · "+(pub?.public_api||"endpoint unavailable")+"</div></div></div><div style='display:flex;gap:7px;align-items:center'>"+action+"</div></div>";
   }).join("");
   const first=[...saved.keys()][0];if(first){activeExchange=first;loadAccount(first)}
