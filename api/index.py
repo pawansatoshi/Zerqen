@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 app = FastAPI(title="Zerqen API", version="0.1.0")
 
@@ -476,3 +476,61 @@ def account(
         raise
     except Exception:  # noqa: BLE001
         return safe_error("account data temporarily unavailable")
+
+
+class _PaperBridge:
+    def __init__(self, headers: dict[str, str], body: bytes, path: str = "/") -> None:
+        from io import BytesIO
+
+        self.headers = headers
+        self.path = path
+        self.rfile = BytesIO(body)
+        self.wfile = BytesIO()
+        self.status = 200
+        self.response_headers: dict[str, str] = {}
+
+    def send_response(self, status: int, message: str | None = None) -> None:
+        self.status = status
+
+    def send_header(self, key: str, value: str) -> None:
+        self.response_headers[key] = value
+
+    def end_headers(self) -> None:
+        return None
+
+    def log_message(self, format: str, *args: object) -> None:
+        return None
+
+
+def _run_paper_bridge(method: str, headers: dict[str, str], body: bytes = b""):
+    from api._paper import handler as PaperHandler
+
+    bridge = _PaperBridge(headers, body)
+    if method == "GET":
+        PaperHandler.do_GET(bridge)
+    else:
+        PaperHandler.do_POST(bridge)
+    return Response(
+        content=bridge.wfile.getvalue(),
+        status_code=bridge.status,
+        headers=bridge.response_headers,
+        media_type="application/json",
+    )
+
+
+@app.get("/api/paper")
+def paper_get(x_zerqen_dashboard_token: str | None = Header(default=None)):
+    return _run_paper_bridge("GET", {"x-zerqen-dashboard-token": x_zerqen_dashboard_token or ""})
+
+
+@app.post("/api/paper")
+async def paper_post(
+    request: Request,
+    x_zerqen_dashboard_token: str | None = Header(default=None),
+):
+    body = await request.body()
+    headers = {
+        "x-zerqen-dashboard-token": x_zerqen_dashboard_token or "",
+        "Content-Length": str(len(body)),
+    }
+    return _run_paper_bridge("POST", headers, body)
