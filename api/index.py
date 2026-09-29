@@ -246,6 +246,24 @@ def market(
         return safe_error("market data temporarily unavailable")
 
 
+@app.get("/api/demo-worker")
+def demo_worker_get():
+    from api.demo_worker import worker_status
+    try:
+        return {"ok": True, **worker_status()}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=503)
+
+
+@app.post("/api/demo-worker")
+async def demo_worker_post(request: Request):
+    from api.demo_worker import set_enabled
+    body = await request.json()
+    if body.get("action") not in {"start", "stop"}:
+        raise HTTPException(400, "action must be start or stop")
+    return {"ok": True, **set_enabled(body["action"] == "start")}
+
+
 @app.get("/api/backtest/health")
 def backtest_health():
     return {"ok": True, "mode": "BACKTEST", "markets": ["spot", "futures"], "live_trading": False}
