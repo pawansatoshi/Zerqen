@@ -366,7 +366,7 @@ function renderLedgerSummary(d){
     ["Reserved Capital",a.reserved_capital],["Realized P&L",a.realized_pnl],["Unrealized P&L",a.unrealized_pnl],
     ["Net P&L",a.net_pnl],["Fees",a.fees],["Slippage",a.slippage],["Actual Return",a.actual_return,"pct"],
     ["Research Hurdle",d.research_hurdle,"pct"],["Trading Days",(d.daily_compounding||[]).length],
-    ["Winning Trades",s.winning_trades],["Losing Trades",s.losing_trades],["Win Rate",s.win_rate,"pct"],["Max Drawdown",a.drawdown,"pct"]
+    ["Winning Trades",s.winning_trades],["Losing Trades",s.losing_trades],["Win Rate",s.win_rate,"pct"],["Max Drawdown",a.max_drawdown,"pct"]
   ];
   const html=cards.map(([k,v,t])=>"<div class='card metric'><label>"+k+"</label><strong>"+(t==="pct"?pct(v):(typeof v==="number"?"$"+fmt(v):fmt(v)))+"</strong></div>").join("");
   $("ledgerSummary").innerHTML=html;$("compSummary").innerHTML=html;
