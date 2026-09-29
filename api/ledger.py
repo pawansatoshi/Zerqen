@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
+from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import Response
 
 router = APIRouter(prefix="/api/ledger")
@@ -29,6 +31,10 @@ def _ensure_schema(conn):
         CREATE TABLE IF NOT EXISTS zerqen_paper_trades (
             trade_id TEXT PRIMARY KEY,
             account_id TEXT NOT NULL,
+            decision_id TEXT,
+            position_id TEXT,
+            equity_snapshot_id BIGINT,
+            audit_event_id TEXT,
             signal_id TEXT,
             entry_order_id TEXT,
             exit_order_id TEXT,
@@ -61,6 +67,10 @@ def _ensure_schema(conn):
             duration_seconds BIGINT
         )
     """)
+    conn.execute("ALTER TABLE zerqen_paper_trades ADD COLUMN IF NOT EXISTS decision_id TEXT")
+    conn.execute("ALTER TABLE zerqen_paper_trades ADD COLUMN IF NOT EXISTS position_id TEXT")
+    conn.execute("ALTER TABLE zerqen_paper_trades ADD COLUMN IF NOT EXISTS equity_snapshot_id BIGINT")
+    conn.execute("ALTER TABLE zerqen_paper_trades ADD COLUMN IF NOT EXISTS audit_event_id TEXT")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS zerqen_paper_decisions (
             decision_id TEXT PRIMARY KEY,
@@ -108,12 +118,42 @@ def _ensure_schema(conn):
         "ALTER TABLE zerqen_paper_positions ADD COLUMN IF NOT EXISTS regime TEXT",
         "ALTER TABLE zerqen_paper_positions ADD COLUMN IF NOT EXISTS risk_at_entry NUMERIC",
         "ALTER TABLE zerqen_paper_positions ADD COLUMN IF NOT EXISTS opening_equity NUMERIC",
+        "ALTER TABLE zerqen_paper_positions ADD COLUMN IF NOT EXISTS position_id TEXT",
         "ALTER TABLE zerqen_paper_equity_snapshots ADD COLUMN IF NOT EXISTS gross_exposure NUMERIC NOT NULL DEFAULT 0",
         "ALTER TABLE zerqen_paper_equity_snapshots ADD COLUMN IF NOT EXISTS open_risk NUMERIC NOT NULL DEFAULT 0",
         "ALTER TABLE zerqen_paper_equity_snapshots ADD COLUMN IF NOT EXISTS allocation NUMERIC NOT NULL DEFAULT 0",
         "ALTER TABLE zerqen_paper_equity_snapshots ADD COLUMN IF NOT EXISTS cumulative_pnl NUMERIC NOT NULL DEFAULT 0",
     ):
         conn.execute(sql)
+    foreign_keys = [
+        ("fk_paper_orders_account", "zerqen_paper_orders", "account_id", "zerqen_paper_state", "account_id", "CASCADE"),
+        ("fk_paper_fills_account", "zerqen_paper_fills", "account_id", "zerqen_paper_state", "account_id", "CASCADE"),
+        ("fk_paper_fills_order", "zerqen_paper_fills", "client_order_id", "zerqen_paper_orders", "client_order_id", "CASCADE"),
+        ("fk_paper_positions_account", "zerqen_paper_positions", "account_id", "zerqen_paper_state", "account_id", "CASCADE"),
+        ("fk_paper_positions_order", "zerqen_paper_positions", "entry_order_id", "zerqen_paper_orders", "client_order_id", "SET NULL"),
+        ("fk_paper_positions_fill", "zerqen_paper_positions", "entry_fill_id", "zerqen_paper_fills", "fill_id", "SET NULL"),
+        ("fk_paper_snapshots_account", "zerqen_paper_equity_snapshots", "account_id", "zerqen_paper_state", "account_id", "CASCADE"),
+        ("fk_paper_events_account", "zerqen_paper_events", "account_id", "zerqen_paper_state", "account_id", "CASCADE"),
+        ("fk_paper_decisions_account", "zerqen_paper_decisions", "account_id", "zerqen_paper_state", "account_id", "CASCADE"),
+        ("fk_paper_decisions_order", "zerqen_paper_decisions", "order_id", "zerqen_paper_orders", "client_order_id", "SET NULL"),
+        ("fk_paper_trades_account", "zerqen_paper_trades", "account_id", "zerqen_paper_state", "account_id", "CASCADE"),
+        ("fk_paper_trades_decision", "zerqen_paper_trades", "decision_id", "zerqen_paper_decisions", "decision_id", "SET NULL"),
+        ("fk_paper_trades_entry_order", "zerqen_paper_trades", "entry_order_id", "zerqen_paper_orders", "client_order_id", "SET NULL"),
+        ("fk_paper_trades_exit_order", "zerqen_paper_trades", "exit_order_id", "zerqen_paper_orders", "client_order_id", "SET NULL"),
+        ("fk_paper_trades_entry_fill", "zerqen_paper_trades", "entry_fill_id", "zerqen_paper_fills", "fill_id", "SET NULL"),
+        ("fk_paper_trades_exit_fill", "zerqen_paper_trades", "exit_fill_id", "zerqen_paper_fills", "fill_id", "SET NULL"),
+        ("fk_paper_trades_snapshot", "zerqen_paper_trades", "equity_snapshot_id", "zerqen_paper_equity_snapshots", "id", "SET NULL"),
+        ("fk_paper_trades_audit", "zerqen_paper_trades", "audit_event_id", "zerqen_paper_events", "event_id", "SET NULL"),
+    ]
+    for name, table, column, ref_table, ref_column, on_delete in foreign_keys:
+        exists = conn.execute("SELECT 1 FROM pg_constraint WHERE conname=%s", (name,)).fetchone()
+        if not exists:
+            conn.execute(
+                f"ALTER TABLE {table} ADD CONSTRAINT {name} FOREIGN KEY ({column}) "
+                f"REFERENCES {ref_table}({ref_column}) ON DELETE {on_delete} NOT VALID"
+            )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_decisions_account_signal ON zerqen_paper_decisions(account_id, signal_id)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_positions_position_id ON zerqen_paper_positions(position_id) WHERE position_id IS NOT NULL")
     conn.commit()
 
 
@@ -170,38 +210,50 @@ def _rows(conn, sql, vals):
 
 
 def _daily(conn, date_from=None, date_to=None):
-    rows=conn.execute("""
-        SELECT created_at::date AS day,
-               (array_agg(equity ORDER BY created_at ASC))[1] AS first_equity,
-               (array_agg(equity ORDER BY created_at DESC))[1] AS last_equity,
-               MAX(drawdown) AS drawdown, MAX(daily_pnl) AS daily_pnl
-        FROM zerqen_paper_equity_snapshots
-        WHERE account_id='default' AND (%s IS NULL OR created_at::date >= %s)
-          AND (%s IS NULL OR created_at::date <= %s)
-        GROUP BY created_at::date ORDER BY day
-    """,(date_from,date_from,date_to,date_to)).fetchall()
+    conditions=["account_id='default'"]
+    params=[]
+    if date_from:
+        conditions.append("created_at::date >= %s")
+        params.append(date_from)
+    if date_to:
+        conditions.append("created_at::date <= %s")
+        params.append(date_to)
+    rows=conn.execute(
+        f"""SELECT created_at::date AS day, MAX(drawdown) AS drawdown
+            FROM zerqen_paper_equity_snapshots
+            WHERE {" AND ".join(conditions)}
+            GROUP BY created_at::date ORDER BY day""",
+        params,
+    ).fetchall()
+    state=conn.execute("SELECT starting_equity FROM zerqen_paper_state WHERE account_id='default'").fetchone()
+    base=_dec(state[0]) if state else Decimal(0)
     out=[]
-    for day,opening,closing,dd,daily_pnl in rows:
+    opening=base
+    for day,dd in rows:
         tr=conn.execute("""SELECT COUNT(*), COUNT(*) FILTER(WHERE net_pnl>0), COUNT(*) FILTER(WHERE net_pnl<0),
                                   COALESCE(SUM(gross_pnl),0),COALESCE(SUM(fees),0),
-                                  COALESCE(SUM(slippage),0),COALESCE(SUM(net_pnl),0)
-                           FROM zerqen_paper_trades WHERE account_id='default' AND exit_timestamp::date=%s""",(day,)).fetchone()
-        trades,wins,losses,gross,fees,slippage,net=tr
-        op=_dec(opening); close=_dec(closing)
+                                  COALESCE(SUM(slippage),0),COALESCE(SUM(funding),0),
+                                  COALESCE(SUM(net_pnl),0)
+                           FROM zerqen_paper_trades
+                           WHERE account_id='default' AND exit_timestamp::date=%s""",(day,)).fetchone()
+        trades,wins,losses,gross,fees,slippage,funding,net=tr
+        net=_dec(net)
+        close=opening+net
         out.append({
-            "date":str(day),"trading_day":len(out)+1,"opening_equity":float(op),
-            "research_hurdle_amount":float(op*Decimal("0.08")),
+            "date":str(day),"trading_day":len(out)+1,"opening_equity":float(opening),
+            "research_hurdle_amount":float(opening*Decimal("0.08")),
             "actual_gross_pnl":float(gross),"fees":float(fees),"slippage":float(slippage),
-            "net_pnl":float(net),"closing_equity":float(close),
-            "actual_return":float((close-op)/op) if op else 0,
+            "funding":float(funding),"net_pnl":float(net),"closing_equity":float(close),
+            "actual_return":float(net/opening) if opening else 0,
             "drawdown":float(dd or 0),"trades":int(trades),"winning_trades":int(wins),
             "losing_trades":int(losses),"status":"TRADED" if trades else "NO VALID SETUP",
         })
+        opening=close
     return out
 
 
 def _trade_dict(row):
-    names=["trade_id","signal_id","entry_order_id","exit_order_id","entry_fill_id","exit_fill_id",
+    names=["trade_id","decision_id","position_id","equity_snapshot_id","audit_event_id","signal_id","entry_order_id","exit_order_id","entry_fill_id","exit_fill_id",
            "exchange_id","symbol","timeframe","side","strategy","regime","signal_timestamp",
            "entry_timestamp","exit_timestamp","entry_price","exit_price","quantity","stop_price",
            "target_price","risk_at_entry","gross_pnl","fees","slippage","funding","net_pnl",
@@ -216,17 +268,17 @@ def _trade_dict(row):
 @router.get("")
 def ledger(
     x_zerqen_dashboard_token: str | None = Header(default=None),
-    date_from: str | None = Query(None), date_to: str | None = Query(None),
-    exchange: str | None = Query(None), symbol: str | None = Query(None),
-    strategy: str | None = Query(None), side: str | None = Query(None),
-    status: str | None = Query(None), q: str | None = Query(None),
+    date_from: str | None = None, date_to: str | None = None,
+    exchange: str | None = None, symbol: str | None = None,
+    strategy: str | None = None, side: str | None = None,
+    status: str | None = None, q: str | None = None,
 ):
     _require(x_zerqen_dashboard_token)
     try:
         with _db() as conn:
             _ensure_schema(conn)
             where,vals=_filters(locals())
-            trades=_rows(conn,f"""SELECT trade_id,signal_id,entry_order_id,exit_order_id,entry_fill_id,exit_fill_id,
+            trades=_rows(conn,f"""SELECT trade_id,decision_id,position_id,equity_snapshot_id,audit_event_id,signal_id,entry_order_id,exit_order_id,entry_fill_id,exit_fill_id,
                 exchange_id,symbol,timeframe,side,strategy,regime,signal_timestamp,entry_timestamp,exit_timestamp,
                 entry_price,exit_price,quantity,stop_price,target_price,risk_at_entry,gross_pnl,fees,slippage,
                 funding,net_pnl,r_multiple,opening_equity,closing_equity,status,duration_seconds
@@ -251,7 +303,6 @@ def ledger(
             state=conn.execute("""SELECT starting_equity,cash,realized_pnl,fees,funding,slippage,halted,paused,exchange_id,symbol,timeframe FROM zerqen_paper_state WHERE account_id='default'""").fetchone()
             latest=conn.execute("SELECT equity,unrealized_pnl,drawdown,gross_exposure,open_risk,allocation FROM zerqen_paper_equity_snapshots WHERE account_id='default' ORDER BY created_at DESC LIMIT 1").fetchone()
             max_dd=conn.execute("SELECT COALESCE(MAX(drawdown),0) FROM zerqen_paper_equity_snapshots WHERE account_id='default'").fetchone()[0]
-            max_dd=conn.execute("SELECT COALESCE(MAX(drawdown),0) FROM zerqen_paper_equity_snapshots WHERE account_id='default'").fetchone()[0]
             account={
                 "initialized":bool(state),
                 "starting_capital":float(state[0]) if state else 0,
@@ -263,8 +314,8 @@ def ledger(
                 "fees":float(state[3]) if state else 0,
                 "funding":float(state[4]) if state else 0,
                 "slippage":float(state[5]) if state else 0,
-                "net_pnl":float(latest[0]-state[0]) if state and latest else 0,
-                "actual_return":float((latest[0]-state[0])/state[0]) if state and latest and state[0] else 0,
+                "net_pnl":float(state[2]) if state else 0,
+                "actual_return":float(state[2]/state[0]) if state and state[0] else 0,
                 "drawdown":float(latest[2]) if latest else 0,
                 "max_drawdown":float(max_dd or 0),
                 "gross_exposure":float(latest[3]) if latest else 0,
@@ -291,7 +342,7 @@ def trade_detail(trade_id: str, x_zerqen_dashboard_token: str | None = Header(de
     _require(x_zerqen_dashboard_token)
     with _db() as conn:
         _ensure_schema(conn)
-        row=conn.execute("""SELECT trade_id,signal_id,entry_order_id,exit_order_id,entry_fill_id,exit_fill_id,
+        row=conn.execute("""SELECT trade_id,decision_id,position_id,equity_snapshot_id,audit_event_id,signal_id,entry_order_id,exit_order_id,entry_fill_id,exit_fill_id,
             exchange_id,symbol,timeframe,side,strategy,regime,signal_timestamp,entry_timestamp,exit_timestamp,
             entry_price,exit_price,quantity,stop_price,target_price,risk_at_entry,gross_pnl,fees,slippage,funding,
             net_pnl,r_multiple,opening_equity,closing_equity,status,duration_seconds
@@ -303,7 +354,7 @@ def trade_detail(trade_id: str, x_zerqen_dashboard_token: str | None = Header(de
         exit_fill=conn.execute("SELECT fill_id,client_order_id,requested_price,price,quantity,fee,slippage,created_at FROM zerqen_paper_fills WHERE fill_id=%s",(trade["exit_fill_id"],)).fetchone()
         events=conn.execute("""SELECT event_id,event_type,payload,created_at FROM zerqen_paper_events
                                WHERE account_id='default' AND created_at BETWEEN %s AND %s ORDER BY created_at""",
-                            (row[13],row[14])).fetchall()
+                            (row[17],row[18])).fetchall()
         def fill_payload(row):
             if not row:
                 return None
@@ -313,6 +364,16 @@ def trade_detail(trade_id: str, x_zerqen_dashboard_token: str | None = Header(de
                 "risk_decision":dict(zip([d.name for d in conn.execute("SELECT * FROM zerqen_paper_decisions WHERE signal_id=%s LIMIT 1",(trade["signal_id"],)).description],decision)) if decision else None,
                 "entry_fill":fill_payload(entry_fill),"exit_fill":fill_payload(exit_fill),
                 "audit_events":[{"event_id":e[0],"event_type":e[1],"payload":e[2],"created_at":_iso(e[3])} for e in events]}
+
+
+def _excel_value(value):
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, default=str, separators=(",", ":"))
+    return value
 
 
 def _flat_rows(data):
@@ -328,17 +389,17 @@ def _flat_rows(data):
 
 @router.get("/export")
 def export_ledger(
-    format: str = Query("csv"), x_zerqen_dashboard_token: str | None = Header(default=None),
-    date_from: str | None = Query(None), date_to: str | None = Query(None),
-    exchange: str | None = Query(None), symbol: str | None = Query(None),
-    strategy: str | None = Query(None), side: str | None = Query(None), status: str | None = Query(None),
-    q: str | None = Query(None),
+    format: str = "csv", x_zerqen_dashboard_token: str | None = Header(default=None),
+    date_from: str | None = None, date_to: str | None = None,
+    exchange: str | None = None, symbol: str | None = None,
+    strategy: str | None = None, side: str | None = None, status: str | None = None,
+    q: str | None = None,
 ):
     _require(x_zerqen_dashboard_token)
     with _db() as conn:
         _ensure_schema(conn)
         where,vals=_filters(locals())
-        trades=_rows(conn,f"""SELECT trade_id,signal_id,entry_order_id,exit_order_id,entry_fill_id,exit_fill_id,
+        trades=_rows(conn,f"""SELECT trade_id,decision_id,position_id,equity_snapshot_id,audit_event_id,signal_id,entry_order_id,exit_order_id,entry_fill_id,exit_fill_id,
             exchange_id,symbol,timeframe,side,strategy,regime,signal_timestamp,entry_timestamp,exit_timestamp,
             entry_price,exit_price,quantity,stop_price,target_price,risk_at_entry,gross_pnl,fees,slippage,funding,
             net_pnl,r_multiple,opening_equity,closing_equity,status,duration_seconds
@@ -368,7 +429,7 @@ def export_ledger(
         if not rows: ws.append(["No records"])
         else:
             headers=list(rows[0].keys()); ws.append(headers)
-            for row in rows: ws.append([row.get(h) for h in headers])
+            for row in rows: ws.append([_excel_value(row.get(h)) for h in headers])
         ws.freeze_panes="A2"; ws.auto_filter.ref=ws.dimensions
     out=io.BytesIO(); wb.save(out)
     return Response(out.getvalue(),media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
