@@ -28,8 +28,10 @@ class FreeModelRegistry:
 
     @staticmethod
     def _price(value: Any):
-        try: return Decimal(str(value))
-        except Exception: return None
+        try:
+            return Decimal(str(value))
+        except Exception:
+            return None
 
     @classmethod
     def _is_free(cls, model):
@@ -38,13 +40,16 @@ class FreeModelRegistry:
 
     def refresh(self, force=False):
         now = time.monotonic()
-        if not force and self._models and now - self._last_refresh < self.refresh_seconds: return self._models
+        if not force and self._models and now - self._last_refresh < self.refresh_seconds:
+            return self._models
         payload = _http_json('GET', OPENROUTER_BASE + '/models')
         models = []
         for raw in payload.get('data', []):
-            if not isinstance(raw, dict) or not self._is_free(raw): continue
+            if not isinstance(raw, dict) or not self._is_free(raw):
+                continue
             mid = str(raw.get('id') or '').strip()
-            if not mid: continue
+            if not mid:
+                continue
             p = raw.get('pricing') or {}
             models.append(FreeModel(mid, self._price(p.get('prompt')) or Decimal('1'), self._price(p.get('completion')) or Decimal('1'), int(raw.get('context_length') or 0)))
         if not any(m.model_id == FREE_ROUTER for m in models):
@@ -57,7 +62,8 @@ class FreeModelRegistry:
         now = time.monotonic()
         return [m for m in self.refresh() if self._cooldown.get(m.model_id, 0) <= now]
 
-    def mark_failed(self, model_id, seconds=300): self._cooldown[model_id] = time.monotonic() + seconds
+    def mark_failed(self, model_id, seconds=300):
+        self._cooldown[model_id] = time.monotonic() + seconds
 
     def snapshot(self):
         models = self.refresh(); now = time.monotonic()
@@ -74,7 +80,8 @@ def _extract_text(payload):
     choices = payload.get('choices') or []
     if not choices: raise ValueError('OpenRouter returned no choices')
     content = (choices[0].get('message') or {}).get('content')
-    if isinstance(content, str): return content
+    if isinstance(content, str):
+        return content
     if isinstance(content, list): return ''.join(str(p.get('text','')) for p in content if isinstance(p,dict))
     raise ValueError('OpenRouter returned no text content')
 
@@ -82,34 +89,51 @@ def _parse_decision(text):
     cleaned = text.strip().strip('`')
     if cleaned.startswith('json'): cleaned = cleaned[4:].strip()
     start, end = cleaned.find('{'), cleaned.rfind('}')
-    if start < 0 or end <= start: raise ValueError('AI response was not JSON')
+    if start < 0 or end <= start:
+        raise ValueError('AI response was not JSON')
     result = json.loads(cleaned[start:end+1])
     decision = str(result.get('decision','HOLD')).upper()
-    if decision not in {'BUY','SELL','HOLD'}: decision='HOLD'
+    if decision not in {'BUY','SELL','HOLD'}:
+        decision = 'HOLD'
     confidence = max(0.0, min(1.0, float(result.get('confidence',0))))
     flags = result.get('risk_flags', [])
     return {'decision':decision,'confidence':confidence,'reason':str(result.get('reason',''))[:1000],'risk_flags':flags if isinstance(flags,list) else [],'invalidation':str(result.get('invalidation',''))[:500]}
 
 def evaluate_setup(context):
-    if not os.getenv('OPENROUTER_API_KEY'): return {'enabled':False,'decision':'HOLD','confidence':0.0,'reason':'OPENROUTER_API_KEY is not configured','model':None,'attempts':[]}
+    if not os.getenv('OPENROUTER_API_KEY'):
+        return {
+            'enabled': False, 'decision': 'HOLD', 'confidence': 0.0,
+            'reason': 'OPENROUTER_API_KEY is not configured', 'model': None, 'attempts': [],
+        }
     system = 'You are Zerqen paper-trading research agent. Use only supplied facts. Return ONLY JSON with decision BUY/SELL/HOLD, confidence 0..1, reason, risk_flags array, invalidation. Hard deterministic risk controls are authoritative.'
     user = json.dumps(context, separators=(',',':'), default=str); attempts=[]
     for model in REGISTRY.active_models()[:REGISTRY.max_attempts]:
-        if model.prompt_price != 0 or model.completion_price != 0: raise FreeOnlyViolation(f'paid model blocked: {model.model_id}')
+        if model.prompt_price != 0 or model.completion_price != 0:
+            raise FreeOnlyViolation(f'paid model blocked: {model.model_id}')
         try:
             response = _http_json('POST', OPENROUTER_BASE + '/chat/completions', {'model':model.model_id,'messages':[{'role':'system','content':system},{'role':'user','content':user}],'temperature':0,'max_tokens':300})
             cost = (response.get('usage') or {}).get('cost')
-            if cost is not None and Decimal(str(cost)) != 0: raise FreeOnlyViolation(f'non-zero inference cost from {model.model_id}')
+            if cost is not None and Decimal(str(cost)) != 0:
+                raise FreeOnlyViolation(f'non-zero inference cost from {model.model_id}')
             parsed = _parse_decision(_extract_text(response)); attempts.append({'model':model.model_id,'ok':True})
             return {'enabled':True,**parsed,'model':model.model_id,'attempts':attempts}
-        except FreeOnlyViolation: raise
+        except FreeOnlyViolation:
+            raise
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
             REGISTRY.mark_failed(model.model_id); attempts.append({'model':model.model_id,'ok':False,'error':type(exc).__name__})
     return {'enabled':True,'decision':'HOLD','confidence':0.0,'reason':'No healthy verified-free OpenRouter model was available','risk_flags':['AI_FALLBACK_EXHAUSTED'],'invalidation':'','model':None,'attempts':attempts}
 
 def health():
-    if not os.getenv('OPENROUTER_API_KEY'): return {'ok':True,'enabled':False,'free_only':True,'reason':'OPENROUTER_API_KEY not configured'}
+    if not os.getenv('OPENROUTER_API_KEY'):
+        return {
+            'ok': True, 'enabled': False, 'free_only': True,
+            'reason': 'OPENROUTER_API_KEY not configured',
+        }
     try:
         models = REGISTRY.refresh(force=True)
         return {'ok':True,'enabled':True,'free_only':True,'verified_free_models':len(models),'models':[m.model_id for m in models]}
-    except Exception as exc: return {'ok':False,'enabled':True,'free_only':True,'error':str(exc)[:500]}
+    except Exception as exc:  # noqa: BLE001
+        return {
+            'ok': False, 'enabled': True, 'free_only': True,
+            'error': str(exc)[:500],
+        }
