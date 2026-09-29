@@ -151,8 +151,8 @@ def apply_fill(
     )
     remaining = quantity - closing
     position.realized_pnl += realized
-    position.fees = position.fees - entry_fee_alloc + fee
-    position.funding = position.funding - entry_funding_alloc + funding
+    position.fees = position.fees - entry_fee_alloc
+    position.funding = position.funding - entry_funding_alloc
     if remaining == 0:
         if closing == original_qty:
             return None, realized
