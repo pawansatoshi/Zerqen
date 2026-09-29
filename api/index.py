@@ -284,6 +284,31 @@ def ai_status(x_zerqen_dashboard_token: str | None = Header(default=None)):
     return health()
 
 
+@app.get("/api/market-intelligence")
+def market_intelligence(
+    symbol: str = Query("BTC/USDT"),
+    exchange: str = Query("binance"),
+    force: bool = Query(False),
+    x_zerqen_dashboard_token: str | None = Header(default=None),
+):
+    require_dashboard_token(x_zerqen_dashboard_token)
+    if exchange not in EXCHANGES:
+        raise HTTPException(400, "unsupported exchange")
+    from zerqen.market_intelligence import build_report, report_for_ai
+    try:
+        report = build_report(exchange, symbol.upper(), force=force)
+        return {"ok": True, "report": report_for_ai(report)}
+    except Exception as exc:  # noqa: BLE001
+        return safe_error(f"market intelligence unavailable: {str(exc)[:180]}")
+
+
+@app.get("/api/ai/runtime")
+def ai_runtime(x_zerqen_dashboard_token: str | None = Header(default=None)):
+    require_dashboard_token(x_zerqen_dashboard_token)
+    from zerqen.market_intelligence import runtime_payload
+    return {"ok": True, **runtime_payload()}
+
+
 @app.get("/api/ai/models")
 def ai_models(x_zerqen_dashboard_token: str | None = Header(default=None)):
     require_dashboard_token(x_zerqen_dashboard_token)
