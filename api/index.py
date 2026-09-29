@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import json
 import os
 from datetime import datetime, timezone
@@ -12,6 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 app = FastAPI(title="Zerqen API", version="0.1.0")
+logger = logging.getLogger(__name__)
 
 from api.ledger import router as ledger_router
 from api.backtest import router as backtest_router
@@ -328,7 +330,8 @@ def scanner(
                 try:
                     x=f.result()
                     if x: results.append(x)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("scanner worker failed: %s", exc)
                     continue
         results.sort(key=lambda x:x["score"], reverse=True)
         return {"ok":True,"exchange":"binance","quote":"USDT","timeframe":timeframe,"scanned":len(ranked),"results":results[:limit],"generated_at":datetime.now(timezone.utc).isoformat()}
