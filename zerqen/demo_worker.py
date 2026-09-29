@@ -55,7 +55,7 @@ def main() -> None:
                     json.dumps({"heartbeat": heartbeat, "cycle": result}, default=str)[:4000],
                     flush=True,
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(
                 datetime.now(timezone.utc).isoformat(),
                 "worker_error",
