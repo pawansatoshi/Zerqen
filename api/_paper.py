@@ -316,7 +316,7 @@ def status_payload(conn):
 def record_decision(conn, state, *, signal_id, strategy, regime, signal_timestamp, signal_direction, ema9, ema21, rsi, atr, risk_per_trade, aggregate_open_risk, open_positions, daily_loss, drawdown, gross_exposure, allocation, risk_decision, rejected, rejection_reason=None, order_id=None):
     conn.execute(
         """INSERT INTO zerqen_paper_decisions(decision_id,account_id,signal_id,exchange_id,symbol,timeframe,strategy,regime,signal_timestamp,signal_direction,ema9,ema21,rsi,atr,risk_per_trade,aggregate_open_risk,open_positions,daily_loss,drawdown,gross_exposure,allocation,risk_decision,rejected,rejection_reason,order_id)
-        VALUES(%s,'default',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        VALUES(%s,'default',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (str(uuid.uuid4()),signal_id,str(state[12]),str(state[13]),str(state[14]),strategy,regime,signal_timestamp,signal_direction,ema9,ema21,rsi,atr,risk_per_trade,aggregate_open_risk,open_positions,daily_loss,drawdown,gross_exposure,allocation,risk_decision,rejected,rejection_reason,order_id),
     )
 
