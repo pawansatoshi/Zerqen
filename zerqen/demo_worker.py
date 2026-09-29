@@ -12,12 +12,12 @@ BASE_URL = os.environ["ZERQEN_API_BASE_URL"].rstrip("/")
 TOKEN = os.environ["ZERQEN_DASHBOARD_TOKEN"]
 
 
-def post_paper_cycle() -> dict:
-    payload = json.dumps({"action": "cycle"}).encode()
+def api_call(path: str, payload: dict | None = None) -> dict:
+    body = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(
-        BASE_URL + "/api/paper",
-        data=payload,
-        method="POST",
+        BASE_URL + path,
+        data=body,
+        method="POST" if payload is not None else "GET",
         headers={
             "Content-Type": "application/json",
             "X-Zerqen-Dashboard-Token": TOKEN,
@@ -28,8 +28,11 @@ def post_paper_cycle() -> dict:
         with urllib.request.urlopen(request, timeout=30) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode(errors="replace")
-        return {"ok": False, "status": exc.code, "error": body[:1000]}
+        return {"ok": False, "status": exc.code, "error": exc.read().decode(errors="replace")[:1000]}
+
+
+def post_paper_cycle() -> dict:
+    return api_call("/api/paper", {"action": "cycle"})
 
 
 def main() -> None:
@@ -41,12 +44,17 @@ def main() -> None:
     while True:
         started = time.monotonic()
         try:
-            result = post_paper_cycle()
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                json.dumps(result, default=str)[:4000],
-                flush=True,
-            )
+            status = api_call("/api/demo-worker")
+            if not status.get("enabled"):
+                print(datetime.now(timezone.utc).isoformat(), "demo worker disabled", flush=True)
+            else:
+                heartbeat = api_call("/api/demo-worker", {"action": "heartbeat"})
+                result = post_paper_cycle()
+                print(
+                    datetime.now(timezone.utc).isoformat(),
+                    json.dumps({"heartbeat": heartbeat, "cycle": result}, default=str)[:4000],
+                    flush=True,
+                )
         except Exception as exc:
             print(
                 datetime.now(timezone.utc).isoformat(),
