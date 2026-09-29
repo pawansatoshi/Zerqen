@@ -51,6 +51,18 @@ def worker_status():
     }
 
 
+def heartbeat():
+    with _db() as conn:
+        ensure_schema(conn)
+        now = datetime.now(timezone.utc)
+        conn.execute(
+            "UPDATE zerqen_demo_worker SET heartbeat_at=%s,updated_at=%s WHERE worker_id='default'",
+            (now, now),
+        )
+        conn.commit()
+    return worker_status()
+
+
 def set_enabled(enabled: bool):
     with _db() as conn:
         ensure_schema(conn)
