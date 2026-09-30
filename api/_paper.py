@@ -611,7 +611,7 @@ class handler(BaseHTTPRequestHandler):
                     for p in positions:
                         try:
                             prices[p.symbol]=fetch_public_market(str(state[12]),p.symbol,str(state[14]),20)[0]
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S112
                             continue
                     protective_exits=manage_protective_exits(conn,state,prices) if prices else []
                     if protective_exits:
