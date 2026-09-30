@@ -290,8 +290,8 @@ def public_market_probe(exchange_id, symbol, timeframe, limit):
                         fallback["data_source_exchange"] = "bybit"
                         fallback["source"] = "public Bybit spot fallback for Binance demo market data"
                         return fallback
-                except Exception:
-                    pass
+                except Exception as fallback_exc:  # noqa: BLE001
+                    _ = fallback_exc
                 profile = get_exchange(exchange_id)
                 adapter = create_exchange_adapter(exchange_id, testnet=False)
                 return {"ok": False, "connectivity_status": "FAILED", "exchange": exchange_id, "adapter": type(adapter).__name__, "profile": profile.display_name, "public_api": adapter.endpoint, "symbol": symbol, "symbol_mapping": False, "ticker": False, "ohlcv": False, "error_type": type(exc).__name__, "error_http_status": getattr(exc, "code", None), "error_stage": "public_api"}
