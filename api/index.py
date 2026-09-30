@@ -368,11 +368,14 @@ def exchange_test(
     exchange_id = payload.get("exchange_id")
     if exchange_id not in EXCHANGES:
         raise HTTPException(400, "unsupported exchange")
+    stage = "validate_credentials"
     try:
         api_key = str(payload.get("api_key", "")).strip()
         api_secret = str(payload.get("api_secret", "")).strip()
         if not api_key or not api_secret:
             raise HTTPException(400, "api key and secret are required")
+
+        stage = "create_exchange_client"
         ex = make_exchange(
             exchange_id,
             {
@@ -381,12 +384,18 @@ def exchange_test(
                 "passphrase": str(payload.get("passphrase", "")).strip(),
             },
         )
+
         mode = payload.get("mode", "testnet")
         if mode == "testnet":
+            stage = "configure_sandbox"
             if not ex.has.get("sandbox"):
                 raise HTTPException(400, "testnet/sandbox is not supported by this exchange")
             ex.set_sandbox_mode(True)
+
+        stage = "load_markets"
         ex.load_markets()
+
+        stage = "fetch_balance"
         balance = ex.fetch_balance()
         return {
             "ok": True,
@@ -400,8 +409,35 @@ def exchange_test(
         }
     except HTTPException:
         raise
-    except Exception:  # noqa: BLE001
-        return safe_error("exchange authentication failed")
+    except Exception as exc:  # noqa: BLE001
+        # Never return credentials or signed request material. CCXT exception
+        # messages are useful for diagnosing Binance error codes such as
+        # -2015/-1022 while the UI still remains read-only.
+        raw = str(exc).strip()
+        detail = " ".join(raw.split())[:500]
+        error_type = type(exc).__name__
+        code = getattr(exc, "code", None)
+        http_status = getattr(exc, "http_status", None) or getattr(exc, "httpCode", None)
+        if code is not None:
+            detail = f"{detail} (code={code})"
+        if http_status is not None:
+            detail = f"{detail} (http_status={http_status})"
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "exchange authentication failed",
+                "diagnostic": {
+                    "exchange": exchange_id,
+                    "mode": mode,
+                    "stage": stage,
+                    "error_type": error_type,
+                    "exchange_code": code,
+                    "http_status": http_status,
+                    "detail": detail or "no provider error detail returned",
+                },
+            },
+            status_code=502,
+        )
 
 
 @app.get("/api/account")
