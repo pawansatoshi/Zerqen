@@ -92,25 +92,8 @@ def execute_approved_signal(cycle: dict) -> dict | None:
 
 
 def main() -> None:
-    # Enable the server-side demo scheduler state on worker boot.
-    # This only enables paper/demo execution; it never enables live trading.
-    if os.getenv("ZERQEN_DEMO_WORKER_AUTO_START", "true").strip().lower() in {"1", "true", "yes", "on"}:
-        try:
-            boot = api_call("/api/demo-worker", {"action": "start"})
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                "worker auto-start",
-                json.dumps(boot, default=str),
-                flush=True,
-            )
-        except Exception as exc:  # noqa: BLE001
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                "worker auto-start error",
-                repr(exc),
-                flush=True,
-            )
-
+    # The worker never enables itself. It only honors the persisted server-side
+    # enabled flag set by the user's explicit START AUTONOMOUS action.
     print(
         f"zerqen demo worker started at {datetime.now(timezone.utc).isoformat()} "
         f"interval={INTERVAL}s base={BASE_URL}",
