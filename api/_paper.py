@@ -891,8 +891,8 @@ class handler(BaseHTTPRequestHandler):
                     return send(self,200,status_payload(conn))
 
                 return send(self,400,{"ok":False,"error":"unsupported action"})
-        except Exception:  # noqa: BLE001
-            return send(self,502,{"ok":False,"error":"paper operation temporarily unavailable"})
+        except Exception as exc:  # noqa: BLE001
+            return send(self,502,{"ok":False,"error":"paper operation temporarily unavailable","error_type":type(exc).__name__,"detail":str(exc)[:240]})
 
     def log_message(self, format, *args):
         return
