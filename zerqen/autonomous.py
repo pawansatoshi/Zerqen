@@ -117,7 +117,7 @@ def run_autonomous_cycle(conn, state):
         "SELECT payload,created_at FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' ORDER BY created_at DESC LIMIT 1"
     ).fetchone()
     ai_today=conn.execute(
-        "SELECT COUNT(*) FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' AND created_at >= date_trunc('day', now())"
+        "SELECT COUNT(*) FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' AND created_at >= date_trunc('day', now()) AND COALESCE(payload->>'status','') NOT IN ('AI_COOLDOWN','AI_DAILY_CAP')"
     ).fetchone()[0]
     if eligible and latest and ai_today >= ai_daily_cap:
         event(conn,"AUTONOMOUS_AI_REVIEW",{"status":"AI_DAILY_CAP","candidate":eligible[0]["symbol"],"cap":ai_daily_cap})
