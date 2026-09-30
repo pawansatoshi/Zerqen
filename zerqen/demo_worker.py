@@ -62,8 +62,7 @@ def execute_approved_signal(cycle: dict) -> dict | None:
 
 
 def main() -> None:
-    print(
-        f"zerqen demo worker started at {datetime.now(timezone.utc).isoformat()} "
+    # The demo worker is a persistent paper-trading worker. On process boot,\n    # explicitly enable its server-side scheduler state so a fresh/restarted\n    # Voroa container does not remain stuck in the database default (disabled).\n    # This never enables live trading; /api/paper remains the simulated path.\n    if os.getenv("ZERQEN_DEMO_WORKER_AUTO_START", "true").strip().lower() in {"1", "true", "yes", "on"}:\n        try:\n            boot = api_call("/api/demo-worker", {"action": "start"})\n            print(\n                datetime.now(timezone.utc).isoformat(),\n                "worker auto-start",\n                json.dumps(boot, default=str),\n                flush=True,\n            )\n        except Exception as exc:  # noqa: BLE001\n            print(\n                datetime.now(timezone.utc).isoformat(),\n                "worker auto-start error",\n                repr(exc),\n                flush=True,\n            )\n\n    print(\n        f"zerqen demo worker started at {datetime.now(timezone.utc).isoformat()} "
         f"interval={INTERVAL}s base={BASE_URL}",
         flush=True,
     )
