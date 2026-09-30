@@ -66,6 +66,9 @@ def _native_result(exchange_id, adapter, profile, symbol, rows, ticker_data):
         }
 
     rows = sorted(rows, key=lambda r: int(r[0]))
+    opens = [float(r[1]) for r in rows]
+    highs = [float(r[2]) for r in rows]
+    lows = [float(r[3]) for r in rows]
     closes = [float(r[4]) for r in rows]
     times = [int(r[0]) if int(r[0]) > 10**12 else int(r[0]) * 1000 for r in rows]
     volumes = [float(r[5]) for r in rows]
@@ -127,6 +130,9 @@ def _native_result(exchange_id, adapter, profile, symbol, rows, ticker_data):
         "ticker": ticker_data is not None,
         "ohlcv": True,
         "times": times,
+        "opens": opens,
+        "highs": highs,
+        "lows": lows,
         "closes": closes,
         "volumes": volumes,
         "ema9": ema(closes, 9),
@@ -276,6 +282,16 @@ def public_market_probe(exchange_id, symbol, timeframe, limit):
             try:
                 return _native_binance_probe(symbol, timeframe, limit)
             except Exception as exc:  # noqa: BLE001
+                # Binance may reject serverless egress intermittently. Use Bybit's public spot feed for demo data.
+                try:
+                    fallback = _native_bybit_probe(symbol, timeframe, limit)
+                    if fallback.get("connectivity_status") in {"WORKING", "DEGRADED"}:
+                        fallback["requested_exchange"] = exchange_id
+                        fallback["data_source_exchange"] = "bybit"
+                        fallback["source"] = "public Bybit spot fallback for Binance demo market data"
+                        return fallback
+                except Exception:
+                    pass
                 profile = get_exchange(exchange_id)
                 adapter = create_exchange_adapter(exchange_id, testnet=False)
                 return {"ok": False, "connectivity_status": "FAILED", "exchange": exchange_id, "adapter": type(adapter).__name__, "profile": profile.display_name, "public_api": adapter.endpoint, "symbol": symbol, "symbol_mapping": False, "ticker": False, "ohlcv": False, "error_type": type(exc).__name__, "error_http_status": getattr(exc, "code", None), "error_stage": "public_api"}
