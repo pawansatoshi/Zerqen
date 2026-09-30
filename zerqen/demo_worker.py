@@ -32,7 +32,7 @@ def api_call(path: str, payload: dict | None = None) -> dict:
 
 
 def post_paper_cycle() -> dict:
-    return api_call("/api/paper", {"action": "cycle"})
+    return api_call("/api/paper", {"action": "autonomous_cycle"})
 
 
 def ensure_paper_initialized(cycle: dict) -> dict:
@@ -49,7 +49,7 @@ def ensure_paper_initialized(cycle: dict) -> dict:
             "action": "initialize",
             "starting_capital": capital,
             "exchange_id": os.getenv("ZERQEN_DEMO_EXCHANGE", "binance"),
-            "symbol": os.getenv("ZERQEN_DEMO_SYMBOL", "BTC/USDT"),
+            "symbol": os.getenv("ZERQEN_DEMO_SYMBOL", "AUTO/TOP50"),
             "timeframe": os.getenv("ZERQEN_DEMO_TIMEFRAME", "1h"),
             "market_type": "spot",
         },
@@ -87,7 +87,7 @@ def execute_approved_signal(cycle: dict) -> dict | None:
         return {"ok": False, "error": "approved signal missing side or symbol"}
     return api_call(
         "/api/paper",
-        {"action": "test_order", "symbol": symbol, "side": side, "automatic": True},
+        {"action": "test_order", "symbol": symbol, "side": side, "automatic": True, "scanner": True},
     )
 
 
