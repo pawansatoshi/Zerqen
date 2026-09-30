@@ -87,7 +87,7 @@ def execute_approved_signal(cycle: dict) -> dict | None:
         return {"ok": False, "error": "approved signal missing side or symbol"}
     return api_call(
         "/api/paper",
-        {"action": "test_order", "symbol": symbol, "side": side, "automatic": True, "scanner": True},
+        {"action": "test_order", "symbol": symbol, "side": side, "automatic": True, "scanner": True, "autonomous_approved": True},
     )
 
 
