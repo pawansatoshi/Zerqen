@@ -595,6 +595,39 @@ class handler(BaseHTTPRequestHandler):
                     conn.commit()
                     return send(self,200,status_payload(conn))
 
+                if action=="autonomous_cycle":
+                    state=get_state(conn)
+                    if not state:
+                        return send(self,409,{"ok":False,"error":"initialize PAPER mode first"})
+                    state=rollover_if_new_day(conn,state)
+                    if bool(state[11]):
+                        return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
+                    if bool(state[9]):
+                        return send(self,409,{"ok":False,"error":"HALT NEW ORDERS is active"})
+                    if bool(state[16]):
+                        return send(self,409,{"ok":False,"error":"DAILY 8% TARGET HIT — new entries locked"})
+                    positions=fetch_positions(conn)
+                    prices={}
+                    for p in positions:
+                        try:
+                            prices[p.symbol]=fetch_public_market(str(state[12]),p.symbol,str(state[14]),20)[0]
+                        except Exception:
+                            continue
+                    protective_exits=manage_protective_exits(conn,state,prices) if prices else []
+                    if protective_exits:
+                        post_exit=snapshot(conn,prices)
+                        if post_exit and enforce_daily_target(conn,get_state(conn),post_exit[4]):
+                            conn.commit()
+                            return send(self,200,status_payload(conn))
+                    from zerqen.autonomous import run_autonomous_cycle
+                    result=run_autonomous_cycle(conn,get_state(conn))
+                    return send(self,200,{**result,"events":[
+                        {"type":r[0],"payload":r[1],"created_at":r[2].isoformat()}
+                        for r in conn.execute(
+                            "SELECT event_type,payload,created_at FROM zerqen_paper_events WHERE account_id='default' ORDER BY created_at DESC LIMIT 20"
+                        ).fetchall()
+                    ]})
+
                 if action=="cycle":
                     state=get_state(conn)
                     if not state:
