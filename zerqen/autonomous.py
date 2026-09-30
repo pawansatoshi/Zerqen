@@ -98,7 +98,14 @@ def run_autonomous_cycle(conn, state):
                       "momentum":x["momentum"],"atr_pct":x["atr_pct"]} for x in candidates[:10]]})
 
     positions=fetch_positions(conn); existing={p.symbol for p in positions}
-    values=equity(conn,{})
+    marks={}
+    for p in positions:
+        try:
+            from api._paper import fetch_public_market
+            marks[p.symbol]=fetch_public_market("binance",p.symbol,"1h",20)[0]
+        except Exception:
+            pass
+    values=equity(conn,marks)
     current_equity=values[0] if values else D(str(state[1]))
     daily_pnl=values[4] if values else D(0); drawdown=values[3] if values else D(0)
     gross=values[2] if values else D(0); limits=PaperLimits()
@@ -173,7 +180,8 @@ def run_autonomous_cycle(conn, state):
         "ai_model":ai_result.get("model"),"ai_reason":ai_result.get("reason"),
         "ai_risk_flags":ai_result.get("risk_flags"),"ai_report_hash":report.report_hash,
         "stop":str(risk.stop),"target":str(risk.target),"risk_amount":str(risk.risk_amount)})
-    snapshot(conn,{c["symbol"]:D(str(c["price"]))}); conn.commit()
+    marks[c["symbol"]]=D(str(c["price"]))
+    snapshot(conn,marks); conn.commit()
     return {"ok":True,"autonomous":True,"trade":True,"selected":{"symbol":c["symbol"],"side":c["side"],
         "scanner_score":c["score"],"ai_confidence":ai_result.get("confidence"),"stop":str(risk.stop),
         "target":str(risk.target),"risk_amount":str(risk.risk_amount),"report_hash":report.report_hash},
