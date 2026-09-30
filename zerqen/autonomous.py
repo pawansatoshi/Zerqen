@@ -110,8 +110,31 @@ def run_autonomous_cycle(conn, state):
     daily_pnl=values[4] if values else D(0); drawdown=values[3] if values else D(0)
     gross=values[2] if values else D(0); limits=PaperLimits()
     reviewed=[]; approved=[]
-
-    for c in [x for x in candidates if x["side"] in {"BUY","SELL"}][:5]:
+    eligible=[x for x in candidates if x["side"] in {"BUY","SELL"}]
+    ai_interval=int(os.getenv("ZERQEN_AUTONOMOUS_AI_INTERVAL_SECONDS","1800"))
+    ai_daily_cap=int(os.getenv("ZERQEN_AUTONOMOUS_AI_DAILY_CAP","40"))
+    latest=conn.execute(
+        "SELECT payload,created_at FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+    ai_today=conn.execute(
+        "SELECT COUNT(*) FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' AND created_at >= date_trunc('day', now())"
+    ).fetchone()[0]
+    if eligible and latest and ai_today >= ai_daily_cap:
+        event(conn,"AUTONOMOUS_AI_REVIEW",{"status":"AI_DAILY_CAP","candidate":eligible[0]["symbol"],"cap":ai_daily_cap})
+        conn.commit()
+        return {"ok":True,"autonomous":True,"trade":False,"reason":"AI daily safety cap reached","reviewed":[]}
+    if eligible and latest:
+        last_payload=latest[0] or {}
+        last_symbol=str(last_payload.get("symbol") or "")
+        last_side=str(last_payload.get("side") or "")
+        age=(now()-latest[1]).total_seconds()
+        if age < ai_interval and last_symbol == eligible[0]["symbol"] and last_side == eligible[0]["side"]:
+            event(conn,"AUTONOMOUS_AI_REVIEW",{"status":"AI_COOLDOWN","candidate":eligible[0]["symbol"],
+                                               "next_review_seconds":max(0,int(ai_interval-age))})
+            conn.commit()
+            return {"ok":True,"autonomous":True,"trade":False,"reason":"same setup already reviewed; waiting for material change or AI interval","reviewed":[]}
+    # One full AI review per autonomous decision window. The scanner still covers all 50.
+    for c in eligible[:1]:
         symbol=c["symbol"]; side=c["side"]
         if symbol in existing:
             reviewed.append({"symbol":symbol,"side":side,"status":"SKIP_EXISTING_POSITION"}); continue
