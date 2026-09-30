@@ -251,7 +251,8 @@ function closeModal(){$("connectionModal").classList.remove("open")}
 function openModal(){$("connectionModal").classList.add("open")}
 function openModalFor(exchangeId){openModal();$("exchange").value=exchangeId}
 function fillExchanges(){const s=$("exchange");if(!s)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)))}
-function token(){return $("token")?.value||sessionStorage.getItem("zerqen_token")||""}
+function token(){return $("token")?.value.trim()||sessionStorage.getItem("zerqen_token")||""}
+function requireDashboardAccess(){if(token())return true;$("paperMessage").textContent="Dashboard access token required · open Connections → enter token → Verify dashboard token";openConnections();setTimeout(()=>{$("token")?.focus()},120);return false}
 async function api(path,options={}){const headers=Object.assign({},options.headers||{},{"x-zerqen-dashboard-token":token()});return fetch(path,Object.assign({},options,{headers}))}
 async function saveDashboardToken(){
   const value=$("token").value.trim();
@@ -523,7 +524,7 @@ async function takeScannerTrade(symbol,side,silent=false){
     if(ed.ok){playAlert(side);$("paperMessage").textContent="DEMO "+side+" filled on "+symbol+" · simulated only";if(!silent)toast("DEMO "+side+" filled · "+symbol)}
   }else if(!silent)toast("Setup selected but risk/strategy gate did not approve "+symbol);
 }
-async function paperInitialize(){const capital=$("paperCapital").value;displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();renderPaper(d);await loadLedger();const msg=d.ok?"Paper account initialized":"Initialization failed: "+(d.error||("HTTP "+r.status));$("paperMessage").textContent=msg;toast(msg)}catch(e){const msg="Initialization failed: "+(e.message||"network error");$("paperMessage").textContent=msg;toast(msg)}}
+async function paperInitialize(){const capital=$("paperCapital").value;displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();if(r.status===401){$("paperMessage").textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();const msg=d.ok?"Paper account initialized":"Initialization failed: "+(d.error||("HTTP "+r.status));$("paperMessage").textContent=msg;toast(msg)}catch(e){const msg="Initialization failed: "+(e.message||"network error");$("paperMessage").textContent=msg;toast(msg)}}
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
   const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
@@ -543,9 +544,11 @@ async function paperCycle(){
 async function paperToggleAuto(){
   const action=autoDemoTimer?"stop":"start";
   if(action==="start" && !$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
+  if(!requireDashboardAccess())return;
   try{
     const r=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
     const d=await r.json();
+    if(r.status===401){$("paperMessage").textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}
     if(!d.ok) throw new Error(d.error||"worker control failed");
     if(action==="start"){
       scanTop50();
