@@ -251,7 +251,7 @@ function closeModal(){$("connectionModal").classList.remove("open")}
 function openModal(){$("connectionModal").classList.add("open")}
 function openModalFor(exchangeId){openModal();$("exchange").value=exchangeId}
 function fillExchanges(){const s=$("exchange");if(!s)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)))}
-function token(){return $("token")?.value.trim()||sessionStorage.getItem("zerqen_token")||""}
+function token(){return $("token")?.value.trim()||sessionStorage.getItem("zerqen_token")||localStorage.getItem("zerqen_token")||""}
 function requireDashboardAccess(){if(token())return true;$("paperMessage").textContent="Dashboard access token required · open Connections → enter token → Verify dashboard token";openConnections();setTimeout(()=>{$("token")?.focus()},120);return false}
 async function api(path,options={}){const headers=Object.assign({},options.headers||{},{"x-zerqen-dashboard-token":token()});return fetch(path,Object.assign({},options,{headers}))}
 async function saveDashboardToken(){
@@ -263,7 +263,7 @@ async function saveDashboardToken(){
     const res=await fetch("/api/demo-worker",{headers:{"x-zerqen-dashboard-token":value}});
     const d=await res.json().catch(()=>({}));
     if(!res.ok){r.textContent=d.error||"Dashboard token verification failed";r.className="negative";return}
-    sessionStorage.setItem("zerqen_token",value);
+    sessionStorage.setItem("zerqen_token",value);localStorage.setItem("zerqen_token",value);
     r.textContent="✓ Dashboard token verified · worker status: "+(d.enabled?"enabled":"disabled");
     r.className="positive";
     await loadPaper();
@@ -271,7 +271,7 @@ async function saveDashboardToken(){
 }
 async function testConnection(){
   const r=$("result");r.textContent="Testing read-only authentication…";
-  try{const res=await fetch("/api/exchange_test",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":$("token").value},body:JSON.stringify({exchange_id:$("exchange").value,mode:$("mode").value,api_key:$("key").value,api_secret:$("secret").value,passphrase:$("pass").value})});const d=await res.json();if(d.ok){r.textContent="✓ "+d.message+" · "+d.markets+" markets";r.className="positive";sessionStorage.setItem("zerqen_token",$("token").value);loadConnections()}else{const q=d.diagnostic||{};const detail=q.detail?[q.error_type,q.exchange_code!=null?"code "+q.exchange_code:"",q.http_status?"HTTP "+q.http_status:"",q.stage||"",q.detail].filter(Boolean).join(" · "):"";r.textContent="✕ "+(d.error||"verification failed")+(detail?" — "+detail:"");r.className="negative"}}catch(e){r.textContent="✕ network error";r.className="negative"}
+  try{const res=await fetch("/api/exchange_test",{method:"POST",headers:{"Content-Type":"application/json","x-zerqen-dashboard-token":$("token").value},body:JSON.stringify({exchange_id:$("exchange").value,mode:$("mode").value,api_key:$("key").value,api_secret:$("secret").value,passphrase:$("pass").value})});const d=await res.json();if(d.ok){r.textContent="✓ "+d.message+" · "+d.markets+" markets";r.className="positive";sessionStorage.setItem("zerqen_token",$("token").value);localStorage.setItem("zerqen_token",$("token").value);loadConnections()}else{const q=d.diagnostic||{};const detail=q.detail?[q.error_type,q.exchange_code!=null?"code "+q.exchange_code:"",q.http_status?"HTTP "+q.http_status:"",q.stage||"",q.detail].filter(Boolean).join(" · "):"";r.textContent="✕ "+(d.error||"verification failed")+(detail?" — "+detail:"");r.className="negative"}}catch(e){r.textContent="✕ network error";r.className="negative"}
 }
 async function saveConnection(){
   const r=$("result");r.textContent="Encrypting and saving…";
@@ -524,7 +524,7 @@ async function takeScannerTrade(symbol,side,silent=false){
     if(ed.ok){playAlert(side);$("paperMessage").textContent="DEMO "+side+" filled on "+symbol+" · simulated only";if(!silent)toast("DEMO "+side+" filled · "+symbol)}
   }else if(!silent)toast("Setup selected but risk/strategy gate did not approve "+symbol);
 }
-async function paperInitialize(){const capital=$("paperCapital").value;displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){$("paperMessage").textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){$("paperMessage").textContent="Enter a paper symbol.";return}try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json();if(r.status===401){$("paperMessage").textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();const msg=d.ok?"Paper account initialized":"Initialization failed: "+(d.error||("HTTP "+r.status));$("paperMessage").textContent=msg;toast(msg)}catch(e){const msg="Initialization failed: "+(e.message||"network error");$("paperMessage").textContent=msg;toast(msg)}}
+async function paperInitialize(){const msgEl=$("paperMessage");const btn=document.querySelector("[onclick=\"paperInitialize()\"]");const capital=$("paperCapital").value.trim();displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){msgEl.textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){msgEl.textContent="Enter a paper symbol.";return}if(btn){btn.disabled=true;btn.textContent="Initializing demo…"}msgEl.textContent="Initializing $"+capital+" paper account…";try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json().catch(()=>({ok:false,error:"invalid server response"}));if(r.status===401){msgEl.textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();const message=d.ok?"✓ Paper account initialized with $"+capital:"Initialization failed: "+(d.error||("HTTP "+r.status));msgEl.textContent=message;toast(message)}catch(e){const message="Initialization failed: "+(e.message||"network error");msgEl.textContent=message;toast(message)}finally{if(btn){btn.disabled=false;btn.textContent="Start demo session"}}}
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
   const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
