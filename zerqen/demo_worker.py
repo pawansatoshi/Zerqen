@@ -35,6 +35,36 @@ def post_paper_cycle() -> dict:
     return api_call("/api/paper", {"action": "cycle"})
 
 
+def ensure_paper_initialized(cycle: dict) -> dict:
+    """Initialize the default paper account once, then retry the cycle."""
+    if cycle.get("ok") or cycle.get("status") != 409:
+        return cycle
+    error = str(cycle.get("error") or "")
+    if "initialize PAPER mode first" not in error:
+        return cycle
+    capital = os.getenv("ZERQEN_DEMO_STARTING_CAPITAL", "1000").strip()
+    init = api_call(
+        "/api/paper",
+        {
+            "action": "initialize",
+            "starting_capital": capital,
+            "exchange_id": os.getenv("ZERQEN_DEMO_EXCHANGE", "binance"),
+            "symbol": os.getenv("ZERQEN_DEMO_SYMBOL", "BTC/USDT"),
+            "timeframe": os.getenv("ZERQEN_DEMO_TIMEFRAME", "1h"),
+            "market_type": "spot",
+        },
+    )
+    print(
+        datetime.now(timezone.utc).isoformat(),
+        "paper auto-initialize",
+        json.dumps(init, default=str),
+        flush=True,
+    )
+    if init.get("ok"):
+        return post_paper_cycle()
+    return {"ok": False, "status": init.get("status"), "error": init.get("error") or init.get("error_type") or "paper initialization failed"}
+
+
 def execute_approved_signal(cycle: dict) -> dict | None:
     """Convert an AI-approved strategy decision into a simulated paper fill."""
     if not cycle.get("ok"):
@@ -62,6 +92,25 @@ def execute_approved_signal(cycle: dict) -> dict | None:
 
 
 def main() -> None:
+    # Enable the server-side demo scheduler state on worker boot.
+    # This only enables paper/demo execution; it never enables live trading.
+    if os.getenv("ZERQEN_DEMO_WORKER_AUTO_START", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        try:
+            boot = api_call("/api/demo-worker", {"action": "start"})
+            print(
+                datetime.now(timezone.utc).isoformat(),
+                "worker auto-start",
+                json.dumps(boot, default=str),
+                flush=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                datetime.now(timezone.utc).isoformat(),
+                "worker auto-start error",
+                repr(exc),
+                flush=True,
+            )
+
     print(
         f"zerqen demo worker started at {datetime.now(timezone.utc).isoformat()} "
         f"interval={INTERVAL}s base={BASE_URL}",
@@ -75,7 +124,7 @@ def main() -> None:
                 print(datetime.now(timezone.utc).isoformat(), "demo worker disabled", flush=True)
             else:
                 heartbeat = api_call("/api/demo-worker", {"action": "heartbeat"})
-                result = post_paper_cycle()
+                result = ensure_paper_initialized(post_paper_cycle())
                 execution = execute_approved_signal(result)
                 print(
                     datetime.now(timezone.utc).isoformat(),
