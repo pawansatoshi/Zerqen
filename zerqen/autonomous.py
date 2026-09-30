@@ -162,7 +162,8 @@ def run_autonomous_cycle(conn, state):
         row=conn.execute("SELECT COALESCE(risk_at_entry,0) FROM zerqen_paper_positions WHERE account_id='default' AND symbol=%s",(p.symbol,)).fetchone()
         open_risk+=D(str(row[0] or 0))
     allocation=D(0) if eq<=0 else (risk.quantity*D(str(c["price"])))/eq
-    record_decision(conn,state,signal_id=signal_id,strategy="autonomous_top50_ai",regime=regime,
+    decision_state=list(state); decision_state[13]=c["symbol"]
+    record_decision(conn,decision_state,signal_id=signal_id,strategy="autonomous_top50_ai",regime=regime,
                     signal_timestamp=now(),signal_direction=c["side"],ema9=e9[-1],ema21=e21[-1],
                     rsi=rsi,atr=atr,risk_per_trade=limits.risk_per_trade,aggregate_open_risk=open_risk,
                     open_positions=len(positions),daily_loss=daily,drawdown=dd,gross_exposure=gross,
