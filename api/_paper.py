@@ -738,6 +738,7 @@ class handler(BaseHTTPRequestHandler):
                     if side not in {"buy","sell"}:
                         return send(self,400,{"ok":False,"error":"side must be buy or sell"})
                     scanner_requested=bool(data.get("scanner",False))
+                    autonomous_approved=bool(data.get("autonomous_approved",False))
                     state=rollover_if_new_day(conn,state)
                     if bool(state[11]):
                         return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
@@ -755,7 +756,7 @@ class handler(BaseHTTPRequestHandler):
                         direction_ok=(side=="buy" and regime=="trend_up" and rsi>=D(50)) or (side=="sell" and regime=="trend_down" and rsi<=D(50))
                         if not direction_ok:
                             return send(self,409,{"ok":False,"error":"scanner signal failed server-side direction revalidation"})
-                        if os.getenv("OPENROUTER_API_KEY"):
+                        if os.getenv("OPENROUTER_API_KEY") and not autonomous_approved:
                             try:
                                 ai_result, safe_mode_used, intelligence_report = ai_gate_for_setup(
                                     conn, exchange_id, symbol, timeframe, side.upper(), price,
