@@ -78,3 +78,28 @@ def test_net_pnl_excludes_unrealized_profit_from_compounding():
 def test_invalid_market_data_cannot_size():
     limits = PaperLimits()
     assert not size_for_risk(D(10000), D(100), D(0), limits).allowed
+
+
+def test_structural_stop_is_used_and_capped():
+    from zerqen.paper_engine import dynamic_structural_stop
+    rows = [[0, 100, 102, 98, 101, 1000] for _ in range(20)]
+    rows[-1] = [0, 100, 103, 97, 101, 1000]
+    limits = PaperLimits()
+    structural = dynamic_structural_stop(rows, "buy", D(101), D(1))
+    result = size_for_risk(D(10000), D(101), D(1), limits, "buy", structural)
+    assert result.allowed
+    assert result.stop_price < D(101)
+    assert result.target_price > D(101)
+
+def test_stop_over_eight_percent_is_rejected():
+    limits = PaperLimits()
+    result = size_for_risk(D(10000), D(100), D(6), limits)
+    assert not result.allowed
+    assert "capital-protection" in result.reason
+
+def test_volatility_profile_flags_large_atr():
+    from zerqen.paper_engine import volatility_profile
+    rows = [[i, 100, 106, 94, 100, 1000] for i in range(20)]
+    profile = volatility_profile(rows)
+    assert profile["ok"]
+    assert profile["atr_pct"] > D("0.05")

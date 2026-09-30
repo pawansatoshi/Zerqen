@@ -1,0 +1,10 @@
+services:
+  zerqen-demo-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    environment:
+      ZERQEN_API_BASE_URL: ${ZERQEN_API_BASE_URL}
+      ZERQEN_DASHBOARD_TOKEN: ${ZERQEN_DASHBOARD_TOKEN}
+      ZERQEN_DEMO_INTERVAL_SECONDS: ${ZERQEN_DEMO_INTERVAL_SECONDS:-60}
