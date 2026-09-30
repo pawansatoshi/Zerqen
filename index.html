@@ -108,13 +108,13 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
   </div>
   <div class="section"><div class="section-head"><div><h2>Control</h2><p>Starting capital is explicit; no financial value is invented.</p></div></div>
     <div class="card small-card"><div class="form">
-      <label>Paper market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px"><select id="paperMarketType"><option value="spot">SPOT</option><option value="futures" disabled>FUTURES · LOCKED</option></select><select id="paperExchange"></select><input id="paperSymbol" value="BTC/USDT" placeholder="BTC/USDT"><select id="paperTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select></div>
+      <label>Paper market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px"><select id="paperMarketType"><option value="spot">SPOT</option><option value="futures" disabled>FUTURES · LOCKED</option></select><select id="paperExchange"></select><input id="paperSymbol" value="AUTO/TOP50" readonly title="Autonomous mode scans the top 50 liquid USDT spot pairs"><select id="paperTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select></div>
       <div class="section-note">Spot is the only enabled execution market. Futures remains locked. Stops are adaptive to ATR + market structure, capped at 8% distance, with fixed fractional risk.</div>
       <label>Demo currency</label><select id="paperCurrency"><option value="USD">USD · $</option><option value="INR">INR · ₹</option></select>
       <label>Paper starting capital</label><input id="paperCapital" type="number" min="1" step="0.01" placeholder="Enter starting capital">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="primary" onclick="paperInitialize()">Start demo session</button>
-        <button class="secondary" id="autoDemoBtn" onclick="paperToggleAuto()">Start automatic demo</button>
+        <button class="primary" onclick="paperInitialize()">Start autonomous demo</button>
+        <button class="secondary" id="autoDemoBtn" onclick="paperToggleAuto()">Autonomous worker</button>
         <button class="secondary" onclick="paperResume()">Resume demo</button>
         <button class="secondary" onclick="paperPause()">Pause demo</button>
         <button class="secondary" onclick="paperCycle()">Run one market cycle</button>
@@ -524,7 +524,7 @@ async function takeScannerTrade(symbol,side,silent=false){
     if(ed.ok){playAlert(side);$("paperMessage").textContent="DEMO "+side+" filled on "+symbol+" · simulated only";if(!silent)toast("DEMO "+side+" filled · "+symbol)}
   }else if(!silent)toast("Setup selected but risk/strategy gate did not approve "+symbol);
 }
-async function paperInitialize(){const msgEl=$("paperMessage");const btn=document.querySelector("[onclick=\"paperInitialize()\"]");const capital=$("paperCapital").value.trim();displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){msgEl.textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){msgEl.textContent="Enter a paper symbol.";return}if(btn){btn.disabled=true;btn.textContent="Initializing demo…"}msgEl.textContent="Initializing $"+capital+" paper account…";try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json().catch(()=>({ok:false,error:"invalid server response"}));if(r.status===401){msgEl.textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();const message=d.ok?"✓ Paper account initialized with $"+capital:"Initialization failed: "+(d.error||("HTTP "+r.status));msgEl.textContent=message;toast(message)}catch(e){const message="Initialization failed: "+(e.message||"network error");msgEl.textContent=message;toast(message)}finally{if(btn){btn.disabled=false;btn.textContent="Start demo session"}}}
+async function paperInitialize(){const msgEl=$("paperMessage");const btn=document.querySelector("[onclick=\"paperInitialize()\"]");const capital=$("paperCapital").value.trim();displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){msgEl.textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){msgEl.textContent="Enter a paper symbol.";return}if(btn){btn.disabled=true;btn.textContent="Initializing demo…"}msgEl.textContent="Initializing $"+capital+" paper account…";try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json().catch(()=>({ok:false,error:"invalid server response"}));if(r.status===401){msgEl.textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();if(!d.ok){const message="Initialization failed: "+(d.error||("HTTP "+r.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ $"+capital+" initialized · starting autonomous Top-50 AI worker…";const wr=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start"})});const wd=await wr.json().catch(()=>({ok:false,error:"worker response unavailable"}));if(!wr.ok||!wd.ok){const message="Paper account initialized, but autonomous worker could not start: "+(wd.error||("HTTP "+wr.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ Autonomous demo RUNNING · Top-50 scan + market intelligence + AI + risk engine";toast("Autonomous demo started — mobile independent")}catch(e){const message="Initialization failed: "+(e.message||"network error");msgEl.textContent=message;toast(message)}finally{if(btn){btn.disabled=false;btn.textContent="Start demo session"}}}
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
   const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
@@ -554,7 +554,7 @@ async function paperToggleAuto(){
       scanTop50();
       autoDemoTimer=setInterval(async()=>{await refreshPaperStatus();},60000);
       $("autoDemoBtn").textContent="Stop automatic demo";
-      toast("Server demo worker enabled · mobile independent");
+      toast("Autonomous Top-50 worker enabled · mobile independent");
     }else{
       clearInterval(autoDemoTimer);autoDemoTimer=null;
       $("autoDemoBtn").textContent="Start automatic demo";
@@ -580,7 +580,7 @@ async function refreshMarketIntelligence(){
   const grid=$("marketIntelGrid"),badge=$("aiRuntimeBadge");
   if(!grid)return;
   try{
-    const symbol=($("paperSymbol")?.value||"BTC/USDT").trim().toUpperCase();
+    const rawSymbol=($("paperSymbol")?.value||"BTC/USDT").trim().toUpperCase();const symbol=rawSymbol.startsWith("AUTO/")?"BTC/USDT":rawSymbol;
     const r=await api("/api/market-intelligence?symbol="+encodeURIComponent(symbol)+"&exchange=binance",{cache:"no-store"});
     const d=await r.json();
     if(!d.ok)throw new Error(d.error||"report unavailable");
