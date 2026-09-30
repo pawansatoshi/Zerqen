@@ -81,6 +81,23 @@ def scan_top50(limit: int = 50) -> list[dict]:
     return results
 
 
+def _leverage_envelope(atr_pct: float, score: float) -> dict:
+    """Return a paper-test leverage envelope capped at 5x.
+
+    Leverage is capital efficiency, not additional account risk. The deterministic
+    risk engine still sizes the position from the configured account-risk budget.
+    """
+    if atr_pct >= 0.05:
+        return {"recommended": 0, "max": 0, "reason": "extreme volatility"}
+    if atr_pct >= 0.04:
+        return {"recommended": 2, "max": 3, "reason": "high volatility"}
+    if atr_pct >= 0.03:
+        return {"recommended": 3, "max": 4, "reason": "normal/high volatility"}
+    if score >= 80:
+        return {"recommended": 4, "max": 5, "reason": "strong liquid setup"}
+    return {"recommended": 3, "max": 4, "reason": "standard setup"}
+
+
 def run_autonomous_cycle(conn, state):
     from api._paper import (PaperLimits, ai_gate_for_setup, dynamic_structural_stop,
                             equity, event, fetch_candles, fetch_positions, indicators,
@@ -110,6 +127,10 @@ def run_autonomous_cycle(conn, state):
     daily_pnl=values[4] if values else D(0); drawdown=values[3] if values else D(0)
     gross=values[2] if values else D(0); limits=PaperLimits()
     reviewed=[]; approved=[]
+    # All 50 are quantitatively researched first. The complete universe summary is
+    # attached to the deep AI review so the model can compare the chosen setup
+    # against the whole liquid market rather than reasoning from one symbol alone.
+    universe_research=[{k:x.get(k) for k in ("symbol","side","score","price","rsi","momentum","volume_ratio","atr_pct","max_bar_pct","change24h","quote_volume","volatility_ok","liquidity_ok")} for x in candidates]
     eligible=[x for x in candidates if x["side"] in {"BUY","SELL"}]
     ai_interval=int(os.getenv("ZERQEN_AUTONOMOUS_AI_INTERVAL_SECONDS","1800"))
     ai_daily_cap=int(os.getenv("ZERQEN_AUTONOMOUS_AI_DAILY_CAP","40"))
@@ -153,19 +174,21 @@ def run_autonomous_cycle(conn, state):
             if not allowed:
                 reviewed.append({"symbol":symbol,"side":side,"status":"RISK_BLOCKED","reason":reason}); continue
             regime="trend_up" if e9[-1]>e21[-1] else "trend_down"
+            leverage=_leverage_envelope(float(vol.get("atr_pct") or 0), float(c.get("score") or 0))
             ai_result,safe_mode,report=ai_gate_for_setup(
                 conn,"binance",symbol,"1h",side,price,regime,e9[-1],e21[-1],rsi,atr,
                 vol.get("atr_pct"),vol.get("max_bar_pct"),True,
                 {"equity":str(current_equity),"daily_pnl":str(daily_pnl),"drawdown":str(drawdown),
-                 "gross_exposure":str(gross),"open_positions":len(positions),"autonomous":True})
+                 "gross_exposure":str(gross),"open_positions":len(positions),"autonomous":True,
+                 "universe_research":universe_research,"leverage_policy":{"hard_max":5,"recommended":leverage["recommended"],"max_for_setup":leverage["max"],"reason":leverage["reason"]}})
             decision=str(ai_result.get("decision","HOLD")).upper()
             confidence=float(ai_result.get("confidence",0) or 0); flags=ai_result.get("risk_flags") or []
             item={"symbol":symbol,"side":side,"status":"AI_REVIEWED","score":c["score"],
                   "ai_decision":decision,"confidence":confidence,"report_hash":report.report_hash,
-                  "setup":report.setup_candidates[:2],"risk_flags":flags,"safe_mode":safe_mode}
+                  "setup":report.setup_candidates[:2],"risk_flags":flags,"safe_mode":safe_mode,"leverage":leverage,"universe_size":len(universe_research)}
             reviewed.append(item)
             if not safe_mode and decision==side and confidence>=float(os.getenv("ZERQEN_AI_MIN_CONFIDENCE","0.60")) and not flags:
-                approved.append((confidence,c["score"],c,risk,report,ai_result,e9,e21,rsi,atr,regime))
+                approved.append((confidence,c["score"],c,risk,report,ai_result,e9,e21,rsi,atr,regime,leverage))
         except FreeOnlyViolation as exc:
             reviewed.append({"symbol":symbol,"side":side,"status":"AI_BLOCKED","reason":str(exc)[:180]})
         except Exception as exc:
@@ -177,7 +200,7 @@ def run_autonomous_cycle(conn, state):
         conn.commit()
         return {"ok":True,"autonomous":True,"trade":False,"reviewed":reviewed,"reason":"NO_TRADE"}
 
-    _,_,c,risk,report,ai_result,e9,e21,rsi,atr,regime=max(approved,key=lambda x:(x[0],x[1]))
+    _,_,c,risk,report,ai_result,e9,e21,rsi,atr,regime,leverage=max(approved,key=lambda x:(x[0],x[1]))
     signal_id="auto-signal-"+__import__("uuid").uuid4().hex
     eq,_,gross,dd,daily=equity(conn,{c["symbol"]:D(str(c["price"]))}) or (current_equity,D(0),gross,drawdown,daily_pnl)
     open_risk=D(0)
@@ -203,10 +226,10 @@ def run_autonomous_cycle(conn, state):
         "ai_enabled":True,"ai_decision":ai_result.get("decision"),"ai_confidence":ai_result.get("confidence"),
         "ai_model":ai_result.get("model"),"ai_reason":ai_result.get("reason"),
         "ai_risk_flags":ai_result.get("risk_flags"),"ai_report_hash":report.report_hash,
-        "stop":str(risk.stop),"target":str(risk.target),"risk_amount":str(risk.risk_amount)})
+        "stop":str(risk.stop),"target":str(risk.target),"risk_amount":str(risk.risk_amount),"leverage_policy":leverage,"universe_researched":len(universe_research)})
     marks[c["symbol"]]=D(str(c["price"]))
     snapshot(conn,marks); conn.commit()
     return {"ok":True,"autonomous":True,"trade":True,"selected":{"symbol":c["symbol"],"side":c["side"],
         "scanner_score":c["score"],"ai_confidence":ai_result.get("confidence"),"stop":str(risk.stop),
-        "target":str(risk.target),"risk_amount":str(risk.risk_amount),"report_hash":report.report_hash},
+        "target":str(risk.target),"risk_amount":str(risk.risk_amount),"report_hash":report.report_hash,"leverage":leverage["recommended"],"leverage_max":leverage["max"],"universe_researched":len(universe_research)},
         "reviewed":reviewed}
