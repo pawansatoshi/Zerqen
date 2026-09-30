@@ -534,10 +534,11 @@ class handler(BaseHTTPRequestHandler):
                         return send(self,400,{"ok":False,"error":"unsupported paper market exchange"})
                     if timeframe not in {"1h","4h","1d","1w"}:
                         return send(self,400,{"ok":False,"error":"unsupported paper timeframe"})
-                    fetch_public_market(exchange_id, symbol, timeframe, 60)
+                    # Initialization must not block on remote market-data providers.
+                    # Public market data is fetched by the first cycle; the account itself
+                    # can be initialized immediately and remains paper-only.
                     conn.execute("INSERT INTO zerqen_paper_state(account_id,starting_equity,cash,peak_equity,day_start_equity,exchange_id,symbol,timeframe,market_type,updated_at) VALUES('default',%s,%s,%s,%s,%s,%s,%s,%s,%s)",(capital,capital,capital,capital,exchange_id,symbol,timeframe,market_type,t))
-                    event(conn,"PAPER_INITIALIZED",{"starting_capital":str(capital),"exchange_id":exchange_id,"symbol":symbol,"timeframe":timeframe})
-                    snapshot(conn,{symbol: fetch_public_market(exchange_id,symbol,timeframe,20)[0]})
+                    event(conn,"PAPER_INITIALIZED",{"starting_capital":str(capital),"exchange_id":exchange_id,"symbol":symbol,"timeframe":timeframe,"market_data_deferred":True})
                     conn.commit()
                     return send(self,200,status_payload(conn))
 
