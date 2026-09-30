@@ -75,7 +75,7 @@ def scan_top50(limit: int = 50) -> list[dict]:
             try:
                 x=f.result()
                 if x: results.append(x)
-            except Exception:
+            except Exception:  # noqa: BLE001, S112
                 continue
     results.sort(key=lambda x:x["score"], reverse=True)
     return results
@@ -120,7 +120,7 @@ def run_autonomous_cycle(conn, state):
         try:
             from api._paper import fetch_public_market
             marks[p.symbol]=fetch_public_market("binance",p.symbol,"1h",20)[0]
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     values=equity(conn,marks)
     current_equity=values[0] if values else D(str(state[1]))
@@ -191,7 +191,7 @@ def run_autonomous_cycle(conn, state):
                 approved.append((confidence,c["score"],c,risk,report,ai_result,e9,e21,rsi,atr,regime,leverage))
         except FreeOnlyViolation as exc:
             reviewed.append({"symbol":symbol,"side":side,"status":"AI_BLOCKED","reason":str(exc)[:180]})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             reviewed.append({"symbol":symbol,"side":side,"status":"ANALYSIS_ERROR","reason":type(exc).__name__})
 
     if not approved:
