@@ -1048,7 +1048,26 @@ async function loadFuturesLedger(){
     loadFuturesChart("1h");
     setInterval(refreshFuturesState,15000);
   }
+  let overviewChart=null,overviewCandle=null,overviewEma9=null,overviewEma21=null,overviewSymbol=null;
+  async function loadOverviewFuturesChart(symbol){
+    const host=document.getElementById("overviewFuturesChart");if(!host||!symbol)return;
+    try{
+      await injectLibrary();
+      if(!overviewChart){
+        overviewChart=LightweightCharts.createChart(host,{autoSize:true,layout:{background:{type:"solid",color:"transparent"},textColor:"#8f98a8"},grid:{vertLines:{color:"rgba(255,255,255,.045)"},horzLines:{color:"rgba(255,255,255,.045)"}},rightPriceScale:{borderColor:"rgba(255,255,255,.08)"},timeScale:{borderColor:"rgba(255,255,255,.08)",timeVisible:true,secondsVisible:false},handleScroll:{mouseWheel:true,pressedMouseMove:true},handleScale:{mouseWheel:true,pinch:true}});
+        overviewCandle=overviewChart.addSeries(LightweightCharts.CandlestickSeries,{upColor:"#53d98b",downColor:"#ff6b76",borderVisible:false,wickUpColor:"#53d98b",wickDownColor:"#ff6b76"});
+        overviewEma9=overviewChart.addSeries(LightweightCharts.LineSeries,{color:"#82aaff",lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+        overviewEma21=overviewChart.addSeries(LightweightCharts.LineSeries,{color:"#f4c76b",lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+      }
+      const r=await api("/api/futures-chart?symbol="+encodeURIComponent(symbol)+"&timeframe=1h&limit=180",{cache:"no-store"}),d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||"chart unavailable");
+      overviewCandle.setData(d.times.map((t,i)=>({time:t,open:d.opens[i],high:d.highs[i],low:d.lows[i],close:d.closes[i]})));
+      overviewEma9.setData(d.times.map((t,i)=>({time:t,value:d.ema9[i]})).filter(x=>Number.isFinite(x.value)));
+      overviewEma21.setData(d.times.map((t,i)=>({time:t,value:d.ema21[i]})).filter(x=>Number.isFinite(x.value)));
+      overviewChart.timeScale().fitContent();
+    }catch(e){host.innerHTML="<div class='empty'>Futures chart unavailable · "+esc(e.message)+"</div>"}
+  }
   window.loadFuturesChart=loadFuturesChart;
+  window.loadOverviewFuturesChart=loadOverviewFuturesChart;
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",install);else install();
 })();</script>
 <!-- demo/real execution controls bundled with guarded paper backend -->
