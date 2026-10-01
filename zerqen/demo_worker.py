@@ -100,8 +100,11 @@ def post_futures_mark() -> dict:
 
 def autonomous_status() -> dict:
     return api_call("autonomous_status", "/api/autonomous")
-def autonomous_action(action: str) -> dict:
-    return api_call("autonomous_action", "/api/autonomous", {"action":action})
+def autonomous_action(action: str, market: str, **extra) -> dict:
+    payload={"action":action,"market":market};payload.update(extra)
+    return api_call("autonomous_"+market+"_"+action, "/api/autonomous", payload)
+def set_stage(market: str, stage: str, message: str, symbol: str | None = None) -> dict:
+    return autonomous_action("stage",market,stage=stage,message=message,symbol=symbol)
 
 
 def ensure_paper_initialized(cycle: dict) -> dict:
@@ -224,9 +227,55 @@ def main() -> None:
                 )
                 continue
 
-            auto=stages["autonomous"]
-            if not auto.get("enabled") and not auto.get("stop_requested"):
-                print(
+            engines={e["market"]:e for e in (stages["autonomous"].get("engines") or [])}
+            spot=engines.get("spot",{})
+            futures=engines.get("futures",{})
+            if not spot.get("enabled") and not futures.get("enabled") and not spot.get("stop_requested") and not futures.get("stop_requested"):
+                print(datetime.now(timezone.utc).isoformat(),"all autonomous engines disabled",flush=True)
+                continue
+
+            stages["heartbeat"] = api_call("demo_worker_heartbeat","/api/demo-worker",{"action":"heartbeat"})
+            if DIAGNOSTIC_ONLY:
+                print(datetime.now(timezone.utc).isoformat(),"diagnostic-only: skipping autonomous execution",flush=True)
+                continue
+
+            if spot.get("enabled") and not spot.get("stop_requested"):
+                set_stage("spot","SCANNING","Scanning Top-50 spot markets")
+                stages["spot_cycle"] = ensure_paper_initialized(post_paper_cycle())
+                set_stage("spot","AI_REVIEW","Filtering candidates and applying AI/risk gates")
+                stages["spot_execution"] = execute_approved_signal(stages["spot_cycle"])
+                result=stages["spot_execution"] or stages["spot_cycle"]
+                if result.get("trade"):
+                    set_stage("spot","IN_POSITION","Managing active Spot position",result.get("symbol"))
+                elif result.get("reason") in {"WAITING_FOR_SETUP","NO_SETUP","NO_VALID_SETUP"}:
+                    set_stage("spot","WAITING","No valid setup; waiting for confirmation")
+                else:
+                    set_stage("spot","MONITORING","Research cycle complete; monitoring for material change")
+            elif spot.get("stop_requested"):
+                set_stage("spot","MANAGING","Stop requested; protecting existing Spot positions")
+                stages["spot_cycle"] = post_paper_cycle()
+                if int(stages["spot_cycle"].get("positions_remaining",0) or 0)==0:
+                    stages["spot_finalize"]=autonomous_action("finalize_stop","spot")
+
+            if futures.get("enabled") and not futures.get("stop_requested"):
+                set_stage("futures","SCANNING","Scanning Top-50 futures candidates")
+                stages["futures_mark"] = post_futures_mark()
+                set_stage("futures","AI_REVIEW","Running multi-timeframe intelligence + AI review")
+                stages["futures_cycle"] = post_futures_cycle()
+                result=stages["futures_cycle"]
+                if result.get("trade"):
+                    set_stage("futures","IN_POSITION","Managing active Futures position",result.get("symbol"))
+                elif result.get("reason") in {"WAITING_FOR_SETUP","AI_HOLD_OR_REJECT","RISK_BLOCKED"}:
+                    set_stage("futures","WAITING","No valid setup; waiting for confirmation")
+                else:
+                    set_stage("futures","MONITORING","Research cycle complete; monitoring for material change")
+            elif futures.get("stop_requested"):
+                set_stage("futures","MANAGING","Stop requested; protecting existing Futures positions")
+                stages["futures_mark"] = post_futures_mark()
+                if not (stages["futures_mark"].get("positions") or []):
+                    stages["futures_finalize"]=autonomous_action("finalize_stop","futures")
+
+            print(
                     datetime.now(timezone.utc).isoformat(),
                     "demo worker disabled",
                     flush=True,
