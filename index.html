@@ -467,7 +467,7 @@ async function loadHealth(){
     $("healthApi").textContent="OFFLINE";$("healthDb").textContent="UNKNOWN";$("healthPaper").textContent="BLOCKED";
   }
 }
-async async function loadMarket(){
+async function loadMarket(){
   const tf=currentTimeframe;
   try{
     const symbol=chartSymbol(); const wsSymbol=symbol.replace("/","").toLowerCase(); if(activeMarketWsSymbol!==wsSymbol) connectMarketSocket(symbol); const res=await fetch("/api/market?exchange=binance&symbol="+encodeURIComponent(symbol)+"&timeframe="+encodeURIComponent(tf)+"&limit="+chartWindow,{cache:"no-store"});
@@ -922,7 +922,8 @@ async function startMarketAutonomous(market){
 }
 async function stopMarketAutonomous(market){
   if(!requireDashboardAccess())return;
-  const r=await api("/api/autonomous",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"stop",market})),d=await r.json();
+  const r=await api("/api/autonomous",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"stop",market})});
+  const d=await r.json();
   if(!d.ok){toast(d.error||"stop request failed");return}
   toast(market.toUpperCase()+" stop requested · existing positions remain protected");
   await globalAutonomousStatus();
