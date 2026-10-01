@@ -44,6 +44,7 @@ def action(payload:dict,x_zerqen_dashboard_token:str|None=Header(default=None)):
             except Exception: pass
         elif name=="stop":
             c.execute("UPDATE zerqen_autonomous_engine SET stop_requested=TRUE,updated_at=%s WHERE engine_id='default'",(now,))
+
             try:
                 from api._paper import db as spotdb
                 with spotdb() as p:
@@ -54,5 +55,7 @@ def action(payload:dict,x_zerqen_dashboard_token:str|None=Header(default=None)):
                 with fdb() as p:
                     p.execute("UPDATE zerqen_futures_paper_state SET halted=TRUE,updated_at=%s WHERE account_id='default'");p.commit()
             except Exception: pass
-        else: raise HTTPException(400,"action must be start or stop")
+        elif name=="finalize_stop":
+            c.execute("UPDATE zerqen_autonomous_engine SET enabled=FALSE,stop_requested=FALSE,updated_at=%s WHERE engine_id='default'",(now,))
+        else: raise HTTPException(400,"action must be start, stop or finalize_stop")
         c.commit();return {"ok":True,**_status(c)}
