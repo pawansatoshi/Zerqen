@@ -11,8 +11,14 @@ INTERVAL = int(os.getenv("ZERQEN_DEMO_INTERVAL_SECONDS", "60"))
 BASE_URL = os.environ["ZERQEN_API_BASE_URL"].rstrip("/")
 TOKEN = os.environ["ZERQEN_DASHBOARD_TOKEN"]
 
+HTTP_TIMEOUT = float(os.getenv("ZERQEN_WORKER_HTTP_TIMEOUT_SECONDS", "30"))
+DIAGNOSTICS = os.getenv("ZERQEN_WORKER_DIAGNOSTICS", "true").strip().lower() in {"1", "true", "yes", "on"}
+DIAGNOSTIC_ONLY = os.getenv("ZERQEN_WORKER_DIAGNOSTIC_ONLY", "false").strip().lower() in {"1", "true", "yes", "on"}
 
-def api_call(path: str, payload: dict | None = None) -> dict:
+
+def api_call(label: str, path: str, payload: dict | None = None) -> dict:
+    """Call Zerqen and return structured transport diagnostics instead of raising timeouts."""
+    started = time.monotonic()
     body = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(
         BASE_URL + path,
@@ -21,18 +27,71 @@ def api_call(path: str, payload: dict | None = None) -> dict:
         headers={
             "Content-Type": "application/json",
             "X-Zerqen-Dashboard-Token": TOKEN,
-            "User-Agent": "Zerqen-Demo-Worker/1.0",
+            "User-Agent": "Zerqen-Demo-Worker/1.2",
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode())
+        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+            raw = response.read().decode()
+            elapsed_ms = round((time.monotonic() - started) * 1000)
+            try:
+                result = json.loads(raw)
+            except json.JSONDecodeError:
+                result = {
+                    "ok": False,
+                    "status": response.status,
+                    "error": "invalid JSON response",
+                    "body_preview": raw[:500],
+                }
+            if isinstance(result, dict):
+                result.setdefault("_worker", {})
+                result["_worker"].update({
+                    "stage": label,
+                    "path": path,
+                    "elapsed_ms": elapsed_ms,
+                    "http_status": response.status,
+                })
+                return result
+            return {
+                "ok": False,
+                "error": "non-object JSON response",
+                "_worker": {
+                    "stage": label,
+                    "path": path,
+                    "elapsed_ms": elapsed_ms,
+                    "http_status": response.status,
+                },
+            }
     except urllib.error.HTTPError as exc:
-        return {"ok": False, "status": exc.code, "error": exc.read().decode(errors="replace")[:1000]}
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        return {
+            "ok": False,
+            "status": exc.code,
+            "error": exc.read().decode(errors="replace")[:1000],
+            "_worker": {
+                "stage": label,
+                "path": path,
+                "elapsed_ms": elapsed_ms,
+                "http_status": exc.code,
+            },
+        }
+    except (TimeoutError, urllib.error.URLError, OSError) as exc:
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        reason = getattr(exc, "reason", None)
+        return {
+            "ok": False,
+            "transport_error": type(exc).__name__,
+            "error": str(reason or exc)[:500],
+            "_worker": {
+                "stage": label,
+                "path": path,
+                "elapsed_ms": elapsed_ms,
+            },
+        }
 
 
 def post_paper_cycle() -> dict:
-    return api_call("/api/paper", {"action": "autonomous_cycle"})
+    return api_call("paper_cycle", "/api/paper", {"action": "autonomous_cycle"})
 
 
 def ensure_paper_initialized(cycle: dict) -> dict:
@@ -44,6 +103,7 @@ def ensure_paper_initialized(cycle: dict) -> dict:
         return cycle
     capital = os.getenv("ZERQEN_DEMO_STARTING_CAPITAL", "1000").strip()
     init = api_call(
+        "paper_initialize",
         "/api/paper",
         {
             "action": "initialize",
@@ -62,7 +122,11 @@ def ensure_paper_initialized(cycle: dict) -> dict:
     )
     if init.get("ok"):
         return post_paper_cycle()
-    return {"ok": False, "status": init.get("status"), "error": init.get("error") or init.get("error_type") or "paper initialization failed"}
+    return {
+        "ok": False,
+        "status": init.get("status"),
+        "error": init.get("error") or init.get("error_type") or "paper initialization failed",
+    }
 
 
 def execute_approved_signal(cycle: dict) -> dict | None:
@@ -86,46 +150,129 @@ def execute_approved_signal(cycle: dict) -> dict | None:
     if side not in {"buy", "sell"} or not symbol:
         return {"ok": False, "error": "approved signal missing side or symbol"}
     return api_call(
+        "paper_test_order",
         "/api/paper",
-        {"action": "test_order", "symbol": symbol, "side": side, "automatic": True, "scanner": True, "autonomous_approved": True},
+        {
+            "action": "test_order",
+            "symbol": symbol,
+            "side": side,
+            "automatic": True,
+            "scanner": True,
+            "autonomous_approved": True,
+        },
     )
 
 
 def main() -> None:
-    # The worker never enables itself. It only honors the persisted server-side
-    # enabled flag set by the user's explicit START AUTONOMOUS action.
+    # Dedicated worker services resume the persisted paper/autonomous scheduler on boot.
+    # This never enables live trading.
+    if os.getenv("ZERQEN_DEMO_WORKER_AUTO_START", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        boot = api_call("worker_auto_start", "/api/demo-worker", {"action": "start"})
+        print(
+            datetime.now(timezone.utc).isoformat(),
+            "worker auto-start",
+            json.dumps(boot, default=str)[:2500],
+            flush=True,
+        )
+
     print(
         f"zerqen demo worker started at {datetime.now(timezone.utc).isoformat()} "
-        f"interval={INTERVAL}s base={BASE_URL}",
+        f"interval={INTERVAL}s timeout={HTTP_TIMEOUT}s diagnostics={DIAGNOSTICS} "
+        f"diagnostic_only={DIAGNOSTIC_ONLY} base={BASE_URL}",
         flush=True,
     )
+
     while True:
         started = time.monotonic()
         try:
-            status = api_call("/api/demo-worker")
-            if not status.get("enabled"):
-                print(datetime.now(timezone.utc).isoformat(), "demo worker disabled", flush=True)
-            else:
-                heartbeat = api_call("/api/demo-worker", {"action": "heartbeat"})
-                result = ensure_paper_initialized(post_paper_cycle())
-                execution = execute_approved_signal(result)
+            stages: dict[str, dict] = {}
+
+            if DIAGNOSTICS:
+                stages["health"] = api_call("health", "/api/health")
                 print(
                     datetime.now(timezone.utc).isoformat(),
-                    json.dumps(
-                        {"heartbeat": heartbeat, "cycle": result, "execution": execution},
-                        default=str,
-                    )[:5000],
+                    "probe health",
+                    json.dumps(stages["health"], default=str)[:1800],
                     flush=True,
                 )
+
+            stages["status"] = api_call("demo_worker_get", "/api/demo-worker")
+            print(
+                datetime.now(timezone.utc).isoformat(),
+                "probe demo-worker GET",
+                json.dumps(stages["status"], default=str)[:1800],
+                flush=True,
+            )
+
+            if stages["status"].get("transport_error"):
+                print(
+                    datetime.now(timezone.utc).isoformat(),
+                    "probe failed at demo_worker_get",
+                    json.dumps(stages["status"], default=str),
+                    flush=True,
+                )
+                continue
+
+            if not stages["status"].get("enabled"):
+                print(
+                    datetime.now(timezone.utc).isoformat(),
+                    "demo worker disabled",
+                    flush=True,
+                )
+                continue
+
+            stages["heartbeat"] = api_call(
+                "demo_worker_heartbeat",
+                "/api/demo-worker",
+                {"action": "heartbeat"},
+            )
+            print(
+                datetime.now(timezone.utc).isoformat(),
+                "probe demo-worker heartbeat",
+                json.dumps(stages["heartbeat"], default=str)[:1800],
+                flush=True,
+            )
+
+            if DIAGNOSTIC_ONLY:
+                print(
+                    datetime.now(timezone.utc).isoformat(),
+                    "diagnostic-only: skipping autonomous_cycle and execution",
+                    flush=True,
+                )
+                continue
+
+            stages["cycle"] = ensure_paper_initialized(post_paper_cycle())
+            print(
+                datetime.now(timezone.utc).isoformat(),
+                "probe paper autonomous_cycle",
+                json.dumps(stages["cycle"], default=str)[:3500],
+                flush=True,
+            )
+
+            stages["execution"] = execute_approved_signal(stages["cycle"])
+            print(
+                datetime.now(timezone.utc).isoformat(),
+                "probe paper execution",
+                json.dumps(stages["execution"], default=str)[:1800],
+                flush=True,
+            )
+
+            print(
+                datetime.now(timezone.utc).isoformat(),
+                "worker cycle complete",
+                json.dumps(stages, default=str)[:7000],
+                flush=True,
+            )
         except Exception as exc:  # noqa: BLE001
             print(
                 datetime.now(timezone.utc).isoformat(),
-                "worker_error",
+                "worker_error_unexpected",
                 repr(exc),
                 flush=True,
             )
-        elapsed = time.monotonic() - started
-        time.sleep(max(1, INTERVAL - elapsed))
+        finally:
+            elapsed = time.monotonic() - started
+            time.sleep(max(1, INTERVAL - elapsed))
 
 
 if __name__ == "__main__":
