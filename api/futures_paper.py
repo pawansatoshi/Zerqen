@@ -344,8 +344,6 @@ def action(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=
                     raise HTTPException(409, "daily loss breaker active")
                 if drawdown >= limits.max_drawdown:
                     raise HTTPException(409, "maximum drawdown breaker active")
-                if gross + entry * D(str(payload.get("quantity_override", "0"))) > equity * limits.max_gross_exposure and payload.get("quantity_override") is not None:
-                    raise HTTPException(409, "gross exposure cap exceeded")
                 risk = size_futures_position(equity, entry, D(str(stop)), side, leverage, limits)
                 if not risk.allowed:
                     raise HTTPException(409, risk.reason)
