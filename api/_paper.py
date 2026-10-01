@@ -602,10 +602,9 @@ class handler(BaseHTTPRequestHandler):
                     state=rollover_if_new_day(conn,state)
                     if bool(state[11]):
                         return send(self,409,{"ok":False,"error":"PAPER SESSION IS PAUSED"})
-                    if bool(state[9]):
-                        return send(self,409,{"ok":False,"error":"HALT NEW ORDERS is active"})
+                    halted=bool(state[9])
                     if bool(state[16]):
-                        return send(self,409,{"ok":False,"error":"DAILY 8% TARGET HIT — new entries locked"})
+                        halted=True
                     positions=fetch_positions(conn)
                     prices={}
                     for p in positions:
@@ -614,6 +613,17 @@ class handler(BaseHTTPRequestHandler):
                         except Exception:  # noqa: BLE001, S112
                             continue
                     protective_exits=manage_protective_exits(conn,state,prices) if prices else []
+                    if halted:
+                        # Operator STOP / daily target must stop new entries, not disable
+                        # protective management. Existing positions continue to receive
+                        # stop/target management until they are flat.
+                        post_exit=snapshot(conn,prices) if prices else None
+                        conn.commit()
+                        return send(self,200,{"ok":True,"autonomous":True,"trade":False,
+                            "reason":"NEW_ENTRIES_LOCKED","positions_remaining":len(fetch_positions(conn)),
+                            "protective_exits":protective_exits,
+                            "events":[{"type":r[0],"payload":r[1],"created_at":r[2].isoformat()}
+                                      for r in conn.execute("SELECT event_type,payload,created_at FROM zerqen_paper_events WHERE account_id='default' ORDER BY created_at DESC LIMIT 20").fetchall()]})
                     if protective_exits:
                         post_exit=snapshot(conn,prices)
                         if post_exit and enforce_daily_target(conn,get_state(conn),post_exit[4]):
