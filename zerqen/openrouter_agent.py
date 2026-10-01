@@ -62,7 +62,11 @@ class FreeModelRegistry:
 
     def active_models(self):
         now = time.monotonic()
-        return [m for m in self.refresh() if self._cooldown.get(m.model_id, 0) <= now]
+        # A preloaded registry is used as-is until its first explicit refresh;
+        # production refresh() always stamps _last_refresh, so normal startup
+        # still discovers the current free-model set.
+        models = self._models if self._models and self._last_refresh == 0.0 else self.refresh()
+        return [m for m in models if self._cooldown.get(m.model_id, 0) <= now]
 
     def mark_failed(self, model_id, seconds=300):
         self._cooldown[model_id] = time.monotonic() + seconds

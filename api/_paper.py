@@ -342,7 +342,7 @@ def status_payload(conn):
     dd = values[3] if values else D(0)
     daily = values[4] if values else D(str(state[2]))-D(str(state[8]))
     positions = conn.execute(
-        "SELECT symbol,side,quantity,average_entry,fees,funding,realized_pnl FROM zerqen_paper_positions WHERE account_id='default' AND quantity > 0 ORDER BY symbol"
+        "SELECT symbol,side,quantity,average_entry,fees,funding,realized_pnl,stop_price,target_price,risk_at_entry FROM zerqen_paper_positions WHERE account_id='default' AND quantity > 0 ORDER BY symbol"
     ).fetchall()
     orders = conn.execute(
         "SELECT client_order_id,symbol,side,order_type,quantity,price,status,filled_quantity,average_price,strategy,regime,reason,created_at,updated_at FROM zerqen_paper_orders WHERE account_id='default' ORDER BY created_at DESC LIMIT 50"
@@ -380,7 +380,7 @@ def status_payload(conn):
         "daily_target": float(D(str(state[8])) * PaperLimits().daily_target),
         "prices": {k: float(v) for k,v in prices.items()},
         "positions": [
-            {"symbol":r[0],"side":r[1],"quantity":float(r[2]),"average_entry":float(r[3]),"fees":float(r[4]),"funding":float(r[5]),"realized_pnl":float(r[6])}
+            {"symbol":r[0],"side":r[1],"quantity":float(r[2]),"average_entry":float(r[3]),"fees":float(r[4]),"funding":float(r[5]),"realized_pnl":float(r[6]),"stop_price":float(r[7]) if r[7] is not None else None,"target_price":float(r[8]) if r[8] is not None else None,"risk_at_entry":float(r[9])}
             for r in positions
         ],
         "orders": [
@@ -611,7 +611,7 @@ class handler(BaseHTTPRequestHandler):
                     for p in positions:
                         try:
                             prices[p.symbol]=fetch_public_market(str(state[12]),p.symbol,str(state[14]),20)[0]
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S112
                             continue
                     protective_exits=manage_protective_exits(conn,state,prices) if prices else []
                     if protective_exits:
