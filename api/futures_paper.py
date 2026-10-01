@@ -203,6 +203,9 @@ def _payload(conn):
             "max_leverage": float(FuturesLimits().max_leverage),
             "max_margin_allocation": float(FuturesLimits().max_margin_allocation),
             "max_gross_exposure": float(FuturesLimits().max_gross_exposure),
+            "daily_loss_limit": float(FuturesLimits().daily_loss),
+            "max_drawdown": float(FuturesLimits().max_drawdown),
+            "max_stop_distance": float(FuturesLimits().max_stop_distance),
             "maintenance_margin_rate": float(FuturesLimits().maintenance_margin_rate),
             "fee_rate": float(FuturesLimits().fee_rate),
             "funding_rate_assumption_per_8h": float(FuturesLimits().funding_rate_per_8h),
@@ -335,7 +338,14 @@ def action(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=
                     distance = abs(entry - D(str(stop)))
                     target = entry + distance * D("2") if side == "buy" else entry - distance * D("2")
                 limits = FuturesLimits()
-                equity = _equity(conn)[0]
+                equity_values = _equity(conn)
+                equity, _, gross, drawdown, daily_pnl, _ = equity_values
+                if daily_pnl <= -(equity * limits.daily_loss):
+                    raise HTTPException(409, "daily loss breaker active")
+                if drawdown >= limits.max_drawdown:
+                    raise HTTPException(409, "maximum drawdown breaker active")
+                if gross + entry * D(str(payload.get("quantity_override", "0"))) > equity * limits.max_gross_exposure and payload.get("quantity_override") is not None:
+                    raise HTTPException(409, "gross exposure cap exceeded")
                 risk = size_futures_position(equity, entry, D(str(stop)), side, leverage, limits)
                 if not risk.allowed:
                     raise HTTPException(409, risk.reason)
