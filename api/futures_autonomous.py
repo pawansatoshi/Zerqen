@@ -20,6 +20,7 @@ def cycle(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=N
     from zerqen.autonomous import scan_top50
     from zerqen.openrouter_agent import evaluate_setup, FreeOnlyViolation
     from api.market import public_market_probe
+    from zerqen.market_intelligence import build_report, report_for_ai
     from zerqen.futures_paper import FuturesLimits,size_futures_position
     with _db() as conn:
         state=_state(conn)
@@ -69,9 +70,12 @@ def cycle(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=N
         if not risk.allowed:
             _event(conn,"FUTURES_RISK_BLOCK",{"symbol":symbol,"reason":risk.reason})
             conn.commit(); return {"ok":True,"autonomous":True,"trade":False,"reason":"RISK_BLOCKED","detail":risk.reason}
-        context={"symbol":symbol,"timeframe":"1h","signal":c["side"],"scanner":c,
+        report=build_report("binance",symbol,portfolio={"equity":str(eq),"daily_pnl":str(daily),"drawdown":str(dd),"gross_exposure":str(gross),"open_positions":len(_positions(conn))},risk={"volatility_ok":True,"max_stop_distance":str(limits.max_stop_distance),"min_risk_reward":float(limits.min_risk_reward)})
+        context=report_for_ai(report)
+        context.update({"symbol":symbol,"timeframe":"1h","signal":c["side"],"scanner":c,
                  "portfolio":{"equity":str(eq),"daily_pnl":str(daily),"drawdown":str(dd),"gross_exposure":str(gross),"open_positions":len(_positions(conn))},
-                 "futures":{"leverage":str(leverage),"risk_amount":str(risk.risk_amount),"stop":str(risk.stop_price),"target":str(risk.target_price),"liquidation":str(risk.liquidation_price)}}
+                 "futures":{"leverage":str(leverage),"risk_amount":str(risk.risk_amount),"stop":str(risk.stop_price),"target":str(risk.target_price),"liquidation":str(risk.liquidation_price)}})
+        context["futures"]["report_hash"]=report.report_hash
         try:
             ai=evaluate_setup(context)
         except FreeOnlyViolation as exc:
