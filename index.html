@@ -135,6 +135,37 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
       <div id="paperMessage" class="note">No paper account initialized.</div>
     </div></div>
   </div>
+  <div class="section">
+    <div class="section-head"><div><h2>Futures Paper Engine</h2><p>Isolated-margin simulation only · Binance public futures mark price · no exchange orders</p></div><div><span class="badge">FUTURES PAPER</span></div></div>
+    <div class="card small-card">
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+        <div class="statbox"><label>Equity</label><strong id="futEquity">—</strong></div>
+        <div class="statbox"><label>Free cash</label><strong id="futCash">—</strong></div>
+        <div class="statbox"><label>Unrealized P&L</label><strong id="futUPNL">—</strong></div>
+        <div class="statbox"><label>Exposure</label><strong id="futExposure">—</strong></div>
+      </div>
+      <div class="form" style="margin-top:14px">
+        <label>Futures paper setup</label>
+        <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:8px">
+          <input id="futSymbol" value="BTC/USDT" placeholder="BTC/USDT">
+          <select id="futSide"><option value="buy">LONG</option><option value="sell">SHORT</option></select>
+          <select id="futLeverage"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option><option value="5">5x</option></select>
+          <input id="futStopPct" type="number" min="0.1" max="8" step="0.1" value="3" placeholder="Stop %">
+        </div>
+        <label>Starting capital</label><input id="futCapital" type="number" min="1" step="0.01" value="1000">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="primary" onclick="futuresInitialize()">Initialize $1,000 futures paper</button>
+          <button class="secondary" onclick="futuresOpen()">Open paper position</button>
+          <button class="secondary" onclick="futuresMark()">Mark / manage exits</button>
+          <button class="secondary" onclick="futuresFunding()">Settle funding</button>
+          <button class="secondary" onclick="futuresRefresh()">Refresh</button>
+          <button class="secondary" onclick="futuresReset()">Reset futures paper</button>
+        </div>
+        <div id="futuresMessage" class="note">Futures paper account not initialized.</div>
+      </div>
+      <div class="table-scroll" style="margin-top:14px"><table class="table" style="min-width:1000px"><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Mark</th><th>Leverage</th><th>Margin</th><th>Liquidation</th><th>Margin ratio</th><th>uP&L</th><th>Action</th></tr></thead><tbody id="futuresPositions"><tr><td colspan="11" class="empty">No futures paper positions.</td></tr></tbody></table></div>
+    </div>
+  </div>
   <div class="section"><div class="section-head"><div><h2>Top 50 setup scanner</h2><p>Scans the most liquid USDT pairs, scores trend, momentum, RSI and volume, then selects the strongest current setup.</p></div><div style="display:flex;gap:7px"><button class="secondary" onclick="scanTop50()">Scan now</button><button class="secondary" id="scanAutoBtn" onclick="toggleScanner()">Auto scan OFF</button></div></div>
     <div class="card small-card">
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
