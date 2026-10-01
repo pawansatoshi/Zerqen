@@ -17,9 +17,11 @@ logger = logging.getLogger(__name__)
 
 from api.ledger import router as ledger_router
 from api.backtest import router as backtest_router
+from api.futures_paper import router as futures_paper_router
 
 app.include_router(ledger_router)
 app.include_router(backtest_router)
+app.include_router(futures_paper_router)
 
 
 EXCHANGES = {
