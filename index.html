@@ -585,37 +585,87 @@ async function takeScannerTrade(symbol,side,silent=false){
     if(ed.ok){playAlert(side);$("paperMessage").textContent="DEMO "+side+" filled on "+symbol+" · simulated only";if(!silent)toast("DEMO "+side+" filled · "+symbol)}
   }else if(!silent)toast("Setup selected but risk/strategy gate did not approve "+symbol);
 }
-async async function futuresPaperApi(action,payload={}){
+async function futuresPaperApi(action,payload={}){
   return api("/api/futures-paper",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action},payload))});
 }
 async function futuresRefresh(){
   try{
     const r=await api("/api/futures-paper",{method:"GET",cache:"no-store"});
     const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));
-    renderFuturesPaper(d);
-    return d;
+    renderFuturesPaper(d);return d;
   }catch(e){
-    $("futuresMessage").textContent=e.message||"futures paper unavailable";
-    return null;
+    if($("futuresMessage"))$("futuresMessage").textContent=e.message||"futures paper unavailable";return null;
   }
 }
 function renderFuturesPaper(d){
   if(!d)return;
-  if(!d.ok){
-    if($("futuresMessage"))$("futuresMessage").textContent=d.error||"futures paper unavailable";
-    return;
-  }
+  if(!d.ok){if($("futuresMessage"))$("futuresMessage").textContent=d.error||"futures paper unavailable";return}
   if($("futEquity"))$("futEquity").textContent=d.initialized?"$"+Number(d.equity||0).toFixed(2):"—";
   if($("futCash"))$("futCash").textContent=d.initialized?"$"+Number(d.cash||0).toFixed(2):"—";
   if($("futUPNL"))$("futUPNL").textContent=d.initialized?"$"+Number(d.unrealized_pnl||0).toFixed(2):"—";
   if($("futExposure"))$("futExposure").textContent=d.initialized?"$"+Number(d.gross_exposure||0).toFixed(2):"—";
-  const body=$("futuresPositions"); if(!body)return;
+  const body=$("futuresPositions");if(!body)return;
   const positions=d.positions||[];
   if(!positions.length){body.innerHTML='<tr><td colspan="11" class="empty">No futures paper positions.</td></tr>';return}
   body.innerHTML=positions.map(p=>'<tr>'+
     '<td>'+p.symbol+'</td><td>'+String(p.side).toUpperCase()+'</td><td>'+Number(p.quantity).toFixed(6)+'</td>'+
     '<td>'+Number(p.entry_price).toFixed(4)+'</td><td>'+Number(p.mark_price).toFixed(4)+'</td>'+
-    '<td>'+Number(p.leverage).toFixed(0)+'x</td><td>const msgEl=$("paperMessage");const btn=document.querySelector("[onclick=\"paperInitialize()\"]");const capital=$("paperCapital").value.trim();displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){msgEl.textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){msgEl.textContent="Enter a paper symbol.";return}if(btn){btn.disabled=true;btn.textContent="Initializing demo…"}msgEl.textContent="Initializing $"+capital+" paper account…";try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json().catch(()=>({ok:false,error:"invalid server response"}));if(r.status===401){msgEl.textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();if(!d.ok){const message="Initialization failed: "+(d.error||("HTTP "+r.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ $"+capital+" initialized · starting autonomous Top-50 AI worker…";const wr=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start"})});const wd=await wr.json().catch(()=>({ok:false,error:"worker response unavailable"}));if(!wr.ok||!wd.ok){const message="Paper account initialized, but autonomous worker could not start: "+(wd.error||("HTTP "+wr.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ Autonomous demo RUNNING · Top-50 scan + market intelligence + AI + risk engine";toast("Autonomous demo started — mobile independent")}catch(e){const message="Initialization failed: "+(e.message||"network error");msgEl.textContent=message;toast(message)}finally{if(btn){btn.disabled=false;btn.textContent="Start demo session"}}}
+    '<td>'+Number(p.leverage).toFixed(0)+'x</td><td>$'+Number(p.initial_margin||0).toFixed(2)+'</td>'+
+    '<td>'+Number(p.liquidation_price||0).toFixed(4)+'</td><td>'+((Number(p.margin_ratio)||0)*100).toFixed(2)+'%</td>'+
+    '<td>$'+Number(p.unrealized_pnl||0).toFixed(2)+'</td><td><button class="secondary" onclick="futuresClose(\''+p.symbol+'\')">Close</button></td></tr>'
+  ).join("");
+  if($("futuresMessage")&&d.initialized)$("futuresMessage").textContent="ISOLATED PAPER · leverage capped at 5x · live trading remains locked";
+}
+async function futuresInitialize(){
+  if(!requireDashboardAccess())return;
+  const capital=$("futCapital").value.trim()||"1000";
+  try{const r=await futuresPaperApi("initialize",{starting_capital:capital});const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));renderFuturesPaper(d);if($("futuresMessage"))$("futuresMessage").textContent=d.ok?"✓ Futures paper initialized with $"+capital:"Initialization failed: "+(d.error||"unknown error")}
+  catch(e){if($("futuresMessage"))$("futuresMessage").textContent=e.message||"initialization failed"}
+}
+async function futuresOpen(){
+  if(!requireDashboardAccess())return;
+  const symbol=$("futSymbol").value.trim().toUpperCase(),side=$("futSide").value,leverage=$("futLeverage").value,stopPct=(Number($("futStopPct").value||3)/100).toString();
+  try{const r=await futuresPaperApi("open",{symbol,side,leverage,stop_distance_pct:stopPct});const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));renderFuturesPaper(d);if($("futuresMessage"))$("futuresMessage").textContent=d.ok?"✓ "+side.toUpperCase()+" "+symbol+" paper position opened":"Open rejected: "+(d.error||"unknown error")}
+  catch(e){if($("futuresMessage"))$("futuresMessage").textContent=e.message||"open failed"}
+}
+async function futuresMark(){
+  try{const r=await futuresPaperApi("mark");const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));renderFuturesPaper(d);const closed=(d.closed||[]).map(x=>x.symbol+" "+x.reason).join(", ");if($("futuresMessage"))$("futuresMessage").textContent=closed?"Closed: "+closed:"Mark updated · no protective exit triggered"}
+  catch(e){if($("futuresMessage"))$("futuresMessage").textContent=e.message||"mark failed"}
+}
+async function futuresFunding(){
+  try{const r=await futuresPaperApi("funding");const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));renderFuturesPaper(d);if($("futuresMessage"))$("futuresMessage").textContent=d.ok?"Funding settled: $"+Number(d.funding_cashflow||0).toFixed(4):"Funding failed: "+(d.error||"unknown error")}
+  catch(e){if($("futuresMessage"))$("futuresMessage").textContent=e.message||"funding failed"}
+}
+async function futuresClose(symbol){
+  if(!confirm("Close "+symbol+" in paper mode?"))return;
+  try{const r=await futuresPaperApi("close",{symbol});const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));renderFuturesPaper(d);if($("futuresMessage"))$("futuresMessage").textContent=d.ok?"✓ "+symbol+" paper position closed":"Close failed: "+(d.error||"unknown error")}
+  catch(e){if($("futuresMessage"))$("futuresMessage").textContent=e.message||"close failed"}
+}
+async function futuresReset(){
+  if(!confirm("Reset the futures paper account and its positions?"))return;
+  try{const r=await futuresPaperApi("reset");const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));renderFuturesPaper(d);futuresRefresh();if($("futuresMessage"))$("futuresMessage").textContent="Futures paper account reset."}
+  catch(e){if($("futuresMessage"))$("futuresMessage").textContent=e.message||"reset failed"}
+}
+async function paperInitialize(){
+  const msgEl=$("paperMessage"),btn=document.querySelector("[onclick=\"paperInitialize()\"]"),capital=$("paperCapital").value.trim();
+  displayCurrency=$("paperCurrency")?.value||"USD";loadFx();
+  if(!capital){msgEl.textContent="Enter starting capital first.";return}
+  if(!requireDashboardAccess())return;
+  const cfg=paperConfig();if(!cfg.symbol){msgEl.textContent="Enter a paper symbol.";return}
+  if(btn){btn.disabled=true;btn.textContent="Initializing demo…"}msgEl.textContent="Initializing $"+capital+" paper account…";
+  try{
+    const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg)),d=await r.json().catch(()=>({ok:false,error:"invalid server response"}));
+    if(r.status===401){msgEl.textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}
+    renderPaper(d);await loadLedger();
+    if(!d.ok){const message="Initialization failed: "+(d.error||("HTTP "+r.status));msgEl.textContent=message;toast(message);return}
+    msgEl.textContent="✓ $"+capital+" initialized · starting autonomous Top-50 AI worker…";
+    const wr=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start"})}),wd=await wr.json().catch(()=>({ok:false,error:"worker response unavailable"}));
+    if(!wr.ok||!wd.ok){const message="Paper account initialized, but autonomous worker could not start: "+(wd.error||("HTTP "+wr.status));msgEl.textContent=message;toast(message);return}
+    msgEl.textContent="✓ Autonomous demo RUNNING · Top-50 scan + market intelligence + AI + risk engine";toast("Autonomous demo started — mobile independent");
+  }catch(e){const message="Initialization failed: "+(e.message||"network error");msgEl.textContent=message;toast(message)}
+  finally{if(btn){btn.disabled=false;btn.textContent="Start demo session"}}
+}
+
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
   const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
@@ -780,409 +830,6 @@ selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExcha
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
 setInterval(loadMarket,30000);
 setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(futuresRefresh,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);setInterval(refreshAutonomousStatus,15000);refreshAIStatus();refreshMarketIntelligence();refreshAutonomousStatus();
-setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
-
-</script>
-<!-- demo/real execution controls bundled with guarded paper backend -->
-</body>
-</html>+Number(p.initial_margin).toFixed(2)+'</td>'+
-    '<td>'+Number(p.liquidation_price).toFixed(4)+'</td><td>'+((Number(p.margin_ratio)||0)*100).toFixed(2)+'%</td>'+
-    '<td>const msgEl=$("paperMessage");const btn=document.querySelector("[onclick=\"paperInitialize()\"]");const capital=$("paperCapital").value.trim();displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){msgEl.textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){msgEl.textContent="Enter a paper symbol.";return}if(btn){btn.disabled=true;btn.textContent="Initializing demo…"}msgEl.textContent="Initializing $"+capital+" paper account…";try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json().catch(()=>({ok:false,error:"invalid server response"}));if(r.status===401){msgEl.textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();if(!d.ok){const message="Initialization failed: "+(d.error||("HTTP "+r.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ $"+capital+" initialized · starting autonomous Top-50 AI worker…";const wr=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start"})});const wd=await wr.json().catch(()=>({ok:false,error:"worker response unavailable"}));if(!wr.ok||!wd.ok){const message="Paper account initialized, but autonomous worker could not start: "+(wd.error||("HTTP "+wr.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ Autonomous demo RUNNING · Top-50 scan + market intelligence + AI + risk engine";toast("Autonomous demo started — mobile independent")}catch(e){const message="Initialization failed: "+(e.message||"network error");msgEl.textContent=message;toast(message)}finally{if(btn){btn.disabled=false;btn.textContent="Start demo session"}}}
-async function paperCycle(){
-  if(executionMode!=="demo"){toast("Real mode is locked");return}
-  const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
-  if(d.ok && d.initialized){
-    const decision=(d.events||[]).find(e=>e.type==="STRATEGY_DECISION" && e.payload?.risk_decision==="APPROVED");
-    const hasPosition=(d.positions||[]).some(p=>p.symbol===d.symbol);
-    if(decision && !hasPosition){
-      const er=await paperApi("test_order",{symbol:d.symbol,side:decision.payload?.signal_direction==="SELL"?"sell":"buy"});
-      const ed=await er.json();
-      renderPaper(ed);
-      if(ed.ok){ $("paperMessage").textContent="DEMO execution filled from approved strategy signal"; playAlert(decision.payload?.signal_direction==="SELL"?"SELL":"BUY"); }
-    }
-  }
-  await loadLedger();
-  if(!d.ok && d.error) $("paperMessage").textContent=d.error;
-}
-async function paperToggleAuto(){
-  const action=autoDemoTimer?"stop":"start";
-  if(action==="start" && !$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
-  if(!requireDashboardAccess())return;
-  try{
-    const r=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
-    const d=await r.json();
-    if(r.status===401){$("paperMessage").textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}
-    if(!d.ok) throw new Error(d.error||"worker control failed");
-    if(action==="start"){
-      scanTop50();
-      autoDemoTimer=setInterval(async()=>{await refreshPaperStatus();},60000);
-      $("autoDemoBtn").textContent="Stop automatic demo";
-      toast("Autonomous Top-50 worker enabled · mobile independent");
-    }else{
-      clearInterval(autoDemoTimer);autoDemoTimer=null;
-      $("autoDemoBtn").textContent="Start automatic demo";
-      toast("Server demo worker stopped");
-    }
-  }catch(e){toast(e.message||"worker control failed")}
-}
-
-async function refreshAIStatus(){
-  try{
-    const r=await api("/api/ai/status",{cache:"no-store"});
-    const d=await r.json();
-    const b=$("aiStatusBadge"),t=$("aiStatusText");
-    if(!b||!t)return;
-    if(!d.enabled){b.textContent="AI OFF";t.textContent="Set OPENROUTER_API_KEY to enable the free-only AI gate.";return}
-    if(d.ok){b.textContent="FREE AI READY";t.textContent=(d.verified_free_models||0)+" verified $0 models · paid models blocked";}
-    else{b.textContent="AI HOLD";t.textContent=d.error||"Free-model registry unavailable; AI entries remain blocked."}
-  }catch(_){
-    const b=$("aiStatusBadge"),t=$("aiStatusText");if(b)b.textContent="AI UNKNOWN";if(t)t.textContent="AI status unavailable; no AI-authorized entry is permitted."
-  }
-}
-async function refreshAutonomousStatus(){
-  const badge=$("autoResearchBadge"),life=$("autoResearchLifecycle"),scannedEl=$("autoScanned"),aiEl=$("autoAIReviewed"),approvedEl=$("autoApproved");if(!badge)return;
-  try{
-    const workerRes=await fetch("/api/demo-worker",{headers:{"x-zerqen-dashboard-token":token()},cache:"no-store"}),worker=await workerRes.json().catch(()=>({}));
-    const paperRes=await api("/api/paper",{method:"GET"}),d=await paperRes.json().catch(()=>({}));
-    const events=(d.events||[]).slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-    const scan=events.find(e=>e.type==="AUTONOMOUS_MARKET_SCAN"),reviews=events.filter(e=>e.type==="AUTONOMOUS_AI_REVIEW");
-    const approvedEvents=events.filter(e=>e.type==="STRATEGY_DECISION"&&e.payload?.risk_decision==="APPROVED"&&e.payload?.strategy==="autonomous_top50_ai");
-    const latestReview=reviews[0],latestApproved=events.find(e=>e.type==="AUTONOMOUS_AI_REVIEW"&&e.payload?.status==="APPROVED");
-    const todayKey=new Date().toLocaleDateString(),aiToday=reviews.filter(e=>new Date(e.created_at).toLocaleDateString()===todayKey&&!["AI_COOLDOWN","AI_DAILY_CAP"].includes(String(e.payload?.status||""))).length;
-    const cap=Number(worker?.ai_daily_cap||40),hb=worker?.last_heartbeat?new Date(worker.last_heartbeat):null,interval=Number(worker?.interval_seconds||60);
-    const heartbeatFresh=hb&&(Date.now()-hb.getTime())<=Math.max(90000,interval*2500),running=Boolean(worker?.enabled&&heartbeatFresh);
-    badge.textContent=running?"RUNNING":worker?.enabled?"STALE / OFFLINE":"OFFLINE";badge.style.color=running?"var(--green)":"var(--amber)";
-    life.textContent=running?"worker heartbeat "+hb.toLocaleTimeString():"autonomous worker is not reporting";
-    if(scannedEl)scannedEl.textContent=scan?.payload?.scanned??"—";if(aiEl)aiEl.textContent=aiToday+"/"+cap;if(approvedEl)approvedEl.textContent=approvedEvents.length;
-    const setup=latestApproved?.payload||latestReview?.payload||{};$("autoCurrentSetup").textContent=setup.symbol?setup.symbol+" · "+(setup.side||setup.signal_direction||"—")+" · confidence "+(setup.ai_confidence==null?"—":(Number(setup.ai_confidence)*100).toFixed(0)+"%"):"No approved setup";
-    const reviewed=Array.isArray(latestReview?.payload?.reviewed)?latestReview.payload.reviewed:[],held=reviewed.filter(x=>x.status!=="AI_REVIEWED").slice(0,6);
-    $("autoRejectedCandidates").textContent=held.length?held.map(x=>x.symbol+" — "+(x.reason||x.status||"held")).join(" · "):"No rejected candidates in the latest AI review.";
-    let outcome="Waiting for first autonomous scan.";
-    if(latestReview){const rs=String(latestReview.payload?.status||"").toUpperCase();outcome=rs==="APPROVED"?"AI approved setup after deterministic risk gates.":rs==="NO_TRADE"?"No candidate passed deterministic risk gates and AI confirmation.":rs==="AI_COOLDOWN"?"Same setup is in AI cooldown; waiting for material change.":rs==="AI_DAILY_CAP"?"AI daily safety cap reached; no further autonomous reviews today.":rs==="AI_BLOCKED"?"AI free-only safety gate blocked review.":"Latest autonomous review: "+rs;}
-    else if(scan)outcome=String(scan.payload?.usable_candidates??0)+" candidates eligible after quantitative Top-50 scan.";
-    $("autoResearchOutcome").textContent=outcome;
-    const lastScan=scan?.created_at?new Date(scan.created_at).toLocaleTimeString():"—";$("autoResearchMeta").textContent="Worker heartbeat: "+(hb?hb.toLocaleTimeString():"—")+" · Last scan: "+lastScan+" · Universe: "+(scan?.payload?.scanned??50);
-  }catch(e){badge.textContent="UNKNOWN";badge.style.color="var(--amber)";life.textContent="autonomous observability unavailable";}
-}
-
-async function refreshMarketIntelligence(){
-  const grid=$("marketIntelGrid"),badge=$("aiRuntimeBadge");if(!grid)return;
-  try{
-    const rawSymbol=($("paperSymbol")?.value||"BTC/USDT").trim().toUpperCase(),symbol=rawSymbol.startsWith("AUTO/")?"BTC/USDT":rawSymbol;
-    const r=await api("/api/market-intelligence?symbol="+encodeURIComponent(symbol)+"&exchange=binance",{cache:"no-store"}),d=await r.json();if(!d.ok)throw new Error(d.error||"report unavailable");
-    const x=d.report||{},one=x.timeframes?.["1h"]||{},four=x.timeframes?.["4h"]||{},day=x.timeframes?.["1d"]||{},der=x.derivatives||{},opt=x.options||{},risk=x.risk||{},structure=x.market_structure||{},sets=x.setup_candidates||[];
-    const ema=tf=>tf&&tf.ema9&&tf.ema21?(tf.ema9>tf.ema21?"bullish":"bearish"):"—",val=(v,d=2)=>v==null?"—":Number(v).toFixed(d);
-    const rows=[["regime",structure.regime||"—"],["bias",structure.bias||"—"],["1h rsi",val(one.rsi14,1)],["1h macd",val(one.macd?.macd,4)],["1h adx",val(one.adx14,1)],["1h ema 9/21",ema(one)],["1h ema 50/200",one.ema50&&one.ema200?(one.ema50>one.ema200?"bullish":"bearish"):"—"],["4h trend",ema(four)],["1d trend",ema(day)],["atr",one.atr_pct==null?"—":(Number(one.atr_pct)*100).toFixed(2)+"%"],["volume",one.volume_ratio==null?"—":Number(one.volume_ratio).toFixed(2)+"x"],["support",val(one.support,4)],["resistance",val(one.resistance,4)],["funding",der.funding_rate==null?"unavailable":der.funding_rate],["mark / index",der.mark_price&&der.index_price?val(der.mark_price,4)+" / "+val(der.index_price,4):"unavailable"],["open interest",der.open_interest==null?"unavailable":der.open_interest],["futures expiry",der.expiry_risk||"unavailable"],["options expiry",opt.nearest_expiry||"unavailable"],["setup",sets[0]?.name||"NO TRADE"],["risk gate",risk.volatility_ok?"PASS":"BLOCK"],["data quality",x.data_quality?.score==null?"—":(Number(x.data_quality.score)*100).toFixed(0)+"%"]];
-    grid.innerHTML=rows.map(([k,v])=>"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.12);gap:12px'><span>"+k+"</span><strong>"+esc(v)+"</strong></div>").join("")+"<div style='margin-top:10px;color:var(--muted);font-size:10px'>Trade plan context: "+(sets.length?sets.map(s=>esc(s.side)+" "+esc(s.name)+" · R:R "+esc(s.risk_reward)).join(" · "):"no executable setup")+"</div><div style='margin-top:6px;color:var(--muted);font-size:10px'>Report hash: "+esc(x.report_hash||"—")+"</div>";
-    if(badge){badge.textContent="REPORT READY";badge.className="badge";}
-  }catch(e){if(grid)grid.textContent="Market intelligence unavailable: "+e.message;if(badge)badge.textContent="REPORT ERROR";}
-}
-async function refreshPaperStatus(){
-  try{const r=await api("/api/paper",{method:"GET"});const d=await r.json();renderPaper(d);await loadLedger();await refreshAutonomousStatus()}catch(e){}
-}
-async function paperTestOrder(){const r=await paperApi("test_order",{symbol:$("paperSymbol").value.trim().toUpperCase(),side:"buy"});const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
-async function paperPause(){const r=await paperApi("pause");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session paused":"Pause failed")}
-async function paperResume(){const r=await paperApi("resume");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session resumed":"Resume failed")}
-async function paperHalt(){const r=await paperApi("halt");const d=await r.json();renderPaper(d);toast(d.ok?"HALT NEW ORDERS active":"Could not halt")}
-async function paperFlatten(){const r=await paperApi("flatten");const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Paper positions flattened":"Flatten failed")}
-async function paperReset(){if(!confirm("Reset PAPER account only? This cannot affect exchange accounts, credentials, or production state."))return;const r=await paperApi("reset");const d=await r.json();renderPaper(d);toast(d.ok?"Paper account reset":"Reset failed")}
-
-function fillPaperExchanges(){const s=$("paperExchange");if(!s||s.options.length)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)));s.value="binance";$("paperCurrency")?.addEventListener("change",loadFx)}
-function renderEquity(){const e=$("equityChart");if(e)e.innerHTML="<div class='empty'>No persisted equity snapshots yet. Live account value is shown after an exchange connection.</div>"}
-function esc(v){return String(v==null?"—":v).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]))}
-function pct(v){return fmt(Number(v||0)*100,2)+"%"}
-function money(v){return (Number(v||0)>=0?"+":"")+"$"+fmt(v)}
-function ledgerParams(){const p=new URLSearchParams();const map={date_from:"ledgerFrom",date_to:"ledgerTo",exchange:"ledgerExchange",symbol:"ledgerSymbol",strategy:"ledgerStrategy",side:"ledgerSide",status:"ledgerStatus",q:"ledgerSearch"};Object.entries(map).forEach(([k,id])=>{const v=$(id)?.value?.trim();if(v)p.set(k,v)});return p}
-function fillLedgerExchanges(){const s=$("ledgerExchange");if(!s||s.options.length>1)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)))}
-function renderLedgerSummary(d){
-  const a=d.account||{},s=d.summary||{};const cards=[
-    ["Starting Capital",a.starting_capital],["Current Equity",a.current_equity],["Available Capital",a.available_capital],
-    ["Reserved Capital",a.reserved_capital],["Realized P&L",a.realized_pnl],["Unrealized P&L",a.unrealized_pnl],
-    ["Net P&L",a.net_pnl],["Fees",a.fees],["Slippage",a.slippage],["Actual Return",a.actual_return,"pct"],
-    ["Research Hurdle",d.research_hurdle,"pct"],["Trading Days",(d.daily_compounding||[]).length,"count"],
-    ["Winning Trades",s.winning_trades,"count"],["Losing Trades",s.losing_trades,"count"],["Win Rate",s.win_rate,"pct"],["Max Drawdown",a.max_drawdown,"pct"]
-  ];
-  const html=cards.map(([k,v,t])=>"<div class='card metric'><label>"+k+"</label><strong>"+(t==="pct"?pct(v):(typeof v==="number"?"$"+fmt(v):fmt(v)))+"</strong></div>").join("");
-  $("ledgerSummary").innerHTML=html;$("compSummary").innerHTML=html;
-}
-function renderEquityHistory(d){
-  const e=$("ledgerEquityChart"),rows=d.equity_snapshots||[];if(!e)return;if(!rows.length){e.innerHTML="<div class='empty'>No persisted equity snapshots.</div>";return}
-  const w=1100,h=300,p=28,vals=rows.map(x=>Number(x.equity)),min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
-  const x=i=>p+i*(w-2*p)/Math.max(1,rows.length-1),y=v=>h-p-(v-min)/range*(h-2*p);
-  const actual=rows.map((r,i)=>(i?"L":"M")+x(i).toFixed(1)+" "+y(Number(r.equity)).toFixed(1)).join(" ");
-  const start=Number(d.account?.starting_capital||0);
-  const startingLine=rows.map((r,i)=>(i?"L":"M")+x(i).toFixed(1)+" "+y(start).toFixed(1)).join(" ");
-  const firstTs=rows[0]?.created_at?new Date(rows[0].created_at).getTime():0;
-  const hurdle=rows.map((r,i)=>{const ts=new Date(r.created_at).getTime();const day=Math.max(0,Math.floor((ts-firstTs)/86400000));return(i?"L":"M")+x(i).toFixed(1)+" "+y(start*Math.pow(1.08,day)).toFixed(1)}).join(" ");
-  e.innerHTML="<svg viewBox='0 0 "+w+" "+h+"' preserveAspectRatio='none'><path class='ledger-hurdle' d='"+hurdle+"'/><path class='ledger-start' d='"+startingLine+"'/><path class='ledger-line' d='"+actual+"'/></svg><div class='section-note'>solid = actual persisted equity · baseline = starting equity · dashed = 8% research reference only, never a forecast or trading trigger</div>";
-}
-function renderLedgerTables(d){
-  const tr=(d.trades||[]).slice();const sort=$("ledgerSort")?.value||"latest";tr.sort((a,b)=>{if(sort==="oldest")return new Date(a.exit_timestamp)-new Date(b.exit_timestamp);if(sort==="net_desc")return Number(b.net_pnl)-Number(a.net_pnl);if(sort==="net_asc")return Number(a.net_pnl)-Number(b.net_pnl);if(sort==="symbol")return String(a.symbol||"").localeCompare(String(b.symbol||""));return new Date(b.exit_timestamp)-new Date(a.exit_timestamp)});$("ledgerTradeRows").innerHTML=tr.length?tr.map(t=>"<tr data-trade='"+esc(t.trade_id)+"' onclick='openTradeDetail(\""+esc(t.trade_id)+"\")'><td>"+esc(t.trade_id)+"</td><td>"+new Date(t.exit_timestamp).toLocaleString()+"</td><td>"+esc(t.exchange_id)+"</td><td>"+esc(t.symbol)+"</td><td>"+esc(t.timeframe)+"</td><td>"+esc(String(t.side||"").toUpperCase())+"</td><td>"+esc(t.strategy)+"</td><td>$"+fmt(t.entry_price)+"</td><td>$"+fmt(t.exit_price)+"</td><td>"+fmt(t.quantity,6)+"</td><td>$"+fmt(t.risk_at_entry)+"</td><td>"+money(t.gross_pnl)+"</td><td>$"+fmt(t.fees)+"</td><td>$"+fmt(t.slippage)+"</td><td class='"+(Number(t.net_pnl)>=0?"positive":"negative")+"'>"+money(t.net_pnl)+"</td><td>"+fmt(t.r_multiple,2)+"R</td><td>$"+fmt(t.opening_equity)+"</td><td>$"+fmt(t.closing_equity)+"</td><td>"+esc(t.status)+"</td></tr>").join(""):"<tr><td colspan='19' class='empty'>No persisted paper trades.</td></tr>";
-  const dec=d.decisions||[];$("ledgerDecisionRows").innerHTML=dec.length?dec.map(x=>"<tr><td>"+new Date(x.signal_timestamp).toLocaleString()+"</td><td>"+esc(x.signal_id)+"</td><td>"+esc(x.symbol)+"</td><td>"+esc(x.strategy)+"</td><td>"+esc(x.signal_direction)+"</td><td>"+esc(x.risk_decision)+"</td><td>"+(x.rejected?"YES":"NO")+"</td><td>"+esc(x.rejection_reason)+"</td><td>"+pct(x.daily_loss/(Number(d.account?.current_equity)||1))+"</td><td>"+pct(x.drawdown)+"</td><td>$"+fmt(x.gross_exposure)+"</td></tr>").join(""):"<tr><td colspan='11' class='empty'>No decisions persisted.</td></tr>";
-  const daily=d.daily_compounding||[];$("dailyCompRows").innerHTML=daily.length?daily.map(x=>"<tr><td>"+esc(x.date)+"</td><td>"+x.trading_day+"</td><td>$"+fmt(x.opening_equity)+"</td><td>$"+fmt(x.research_hurdle_amount)+"</td><td>"+money(x.actual_gross_pnl)+"</td><td>$"+fmt(x.fees)+"</td><td>$"+fmt(x.slippage)+"</td><td class='"+(x.net_pnl>=0?"positive":"negative")+"'>"+money(x.net_pnl)+"</td><td>$"+fmt(x.closing_equity)+"</td><td>"+pct(x.actual_return)+"</td><td>"+pct(x.drawdown)+"</td><td>"+x.trades+"</td><td>"+x.winning_trades+"</td><td>"+x.losing_trades+"</td><td>"+esc(x.status)+"</td></tr>").join(""):"<tr><td colspan='15' class='empty'>No persisted daily history.</td></tr>";
-  const audit=d.audit_log||[];$("auditRows").innerHTML=audit.length?audit.map(x=>"<tr><td>"+new Date(x.created_at).toLocaleString()+"</td><td>"+esc(x.event_id)+"</td><td>"+esc(x.event_type)+"</td><td>"+esc(JSON.stringify(x.payload))+"</td></tr>").join(""):"<tr><td colspan='4' class='empty'>No audit events.</td></tr>";
-  const rh=d.equity_snapshots||[];$("riskHistoryRows").innerHTML=rh.length?rh.slice().reverse().map(x=>"<tr><td>"+new Date(x.created_at).toLocaleString()+"</td><td>$"+fmt(x.equity)+"</td><td>$"+fmt(x.cash)+"</td><td>$"+fmt(x.realized_pnl)+"</td><td>$"+fmt(x.unrealized_pnl)+"</td><td>$"+fmt(x.gross_exposure)+"</td><td>$"+fmt(x.open_risk)+"</td><td>"+pct(x.allocation)+"</td><td>"+pct(x.drawdown)+"</td><td>"+money(x.daily_pnl)+"</td><td>"+money(x.cumulative_pnl)+"</td></tr>").join(""):"<tr><td colspan='11' class='empty'>No persisted snapshots.</td></tr>";
-}
-async function loadLedger(){if(!token())return;try{const res=await api("/api/ledger?"+ledgerParams().toString(),{cache:"no-store"});const d=await res.json();if(!res.ok||!d.ok){toast(d.error||"Ledger unavailable");return}fillLedgerExchanges();renderLedgerSummary(d);renderEquityHistory(d);renderLedgerTables(d)}catch(_){toast("Ledger unavailable")}}
-function detailSection(title,items){return "<div class='section'><div class='section-head'><div><h3>"+title+"</h3></div></div><div class='detail-grid'>"+items.map(([k,v])=>"<div class='detail-item'><label>"+esc(k)+"</label><strong>"+esc(v)+"</strong></div>").join("")+"</div></div>"}
-async function openTradeDetail(id){
-  $("tradeDrawer").classList.add("open");
-  $("tradeDrawerBody").textContent="Loading authoritative trade record…";
-  try{
-    const res=await api("/api/ledger/trade/"+encodeURIComponent(id),{cache:"no-store"});
-    const d=await res.json();
-    if(!d.ok){$("tradeDrawerBody").textContent=d.error||"Trade unavailable";return}
-    const t=d.trade,r=d.risk_decision||{};
-    const v=x=>x==null?"—":(typeof x==="number"?fmt(x):String(x));
-    $("tradeDrawerTitle").textContent="Trade "+t.trade_id;
-    const parts=[
-      detailSection("SIGNAL",[["Signal timestamp",t.signal_timestamp],["Strategy",t.strategy],["Timeframe",t.timeframe],["Market regime",t.regime],["Signal direction",r.signal_direction],["EMA 9",v(r.ema9)],["EMA 21",v(r.ema21)],["RSI",v(r.rsi)],["ATR",v(r.atr)]]),
-      detailSection("RISK DECISION",[["Risk per trade",v(r.risk_per_trade)],["Aggregate open risk",v(r.aggregate_open_risk)],["Open positions",v(r.open_positions)],["Daily loss",v(r.daily_loss)],["Drawdown",pct(r.drawdown)],["Gross exposure",v(r.gross_exposure)],["Allocation",pct(r.allocation)],["Risk decision",r.risk_decision]]),
-      detailSection("EXECUTION",[["Order ID",(t.entry_order_id||"—")+" → "+(t.exit_order_id||"—")],["Order creation",t.entry_timestamp],["Fill time",t.exit_timestamp],["Requested entry",v(d.entry_fill?.requested_price)],["Actual entry fill",v(d.entry_fill?.actual_price)],["Requested exit",v(d.exit_fill?.requested_price)],["Actual exit fill",v(d.exit_fill?.actual_price)],["Quantity",v(t.quantity)],["Fees",v(t.fees)],["Slippage",v(t.slippage)],["Order status",t.status]]),
-      detailSection("POSITION",[["Entry",v(t.entry_price)],["Exit",v(t.exit_price)],["Stop",v(t.stop_price)],["Target",v(t.target_price)],["Duration",v(t.duration_seconds)+"s"],["Realized P&L",money(t.net_pnl)],["R multiple",v(t.r_multiple)+"R"]]),
-      detailSection("EQUITY IMPACT",[["Opening equity",v(t.opening_equity)],["Capital allocated",v(t.risk_at_entry)],["Closing equity",v(t.closing_equity)],["Net equity change",money(Number(t.closing_equity)-Number(t.opening_equity))]]),
-      "<div class='section'><div class='small-title'>AUDIT EVENTS</div><div class='section-note'>"+esc(JSON.stringify(d.audit_events||[]))+"</div></div>"
-    ];
-    $("tradeDrawerBody").innerHTML=parts.join("");
-  }catch(_){$("tradeDrawerBody").textContent="Trade detail unavailable"}
-}
-function closeTradeDetail(){$("tradeDrawer").classList.remove("open")}
-async function exportLedger(format){if(!token()){toast("Dashboard token required");return}try{const res=await api("/api/ledger/export?format="+format+"&"+ledgerParams().toString(),{cache:"no-store"});if(!res.ok){const d=await res.json();toast(d.error||"Export failed");return}const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=format==="xlsx"?"zerqen-trade-ledger.xlsx":"zerqen-trade-ledger.csv";a.click();URL.revokeObjectURL(url);toast("Authoritative ledger exported")}catch(_){toast("Export failed")}}
-selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
-setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
-setInterval(loadMarket,30000);
-setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);setInterval(refreshAutonomousStatus,15000);refreshAIStatus();refreshMarketIntelligence();refreshAutonomousStatus();
-setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
-
-</script>
-<!-- demo/real execution controls bundled with guarded paper backend -->
-</body>
-</html>+Number(p.unrealized_pnl).toFixed(2)+'</td>'+
-    '<td><button class="secondary" onclick="futuresClose(\''+p.symbol+'\')">Close</button></td></tr>').join("");
-  if($("futuresMessage") && d.initialized){
-    $("futuresMessage").textContent="ISOLATED PAPER · leverage capped at 5x · live trading remains locked";
-  }
-}
-async function futuresInitialize(){
-  if(!requireDashboardAccess())return;
-  const capital=$("futCapital").value.trim()||"1000";
-  try{
-    const r=await futuresPaperApi("initialize",{starting_capital:capital});
-    const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));
-    renderFuturesPaper(d);
-    $("futuresMessage").textContent=d.ok?"✓ Futures paper initialized with $"+capital:"Initialization failed: "+(d.error||"unknown error");
-  }catch(e){$("futuresMessage").textContent=e.message||"initialization failed"}
-}
-async function futuresOpen(){
-  if(!requireDashboardAccess())return;
-  const symbol=$("futSymbol").value.trim().toUpperCase();
-  const side=$("futSide").value;
-  const leverage=$("futLeverage").value;
-  const stopPct=(Number($("futStopPct").value||3)/100).toString();
-  try{
-    const r=await futuresPaperApi("open",{symbol,side,leverage,stop_distance_pct:stopPct});
-    const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));
-    renderFuturesPaper(d);
-    $("futuresMessage").textContent=d.ok?"✓ "+side.toUpperCase()+" "+symbol+" paper position opened":"Open rejected: "+(d.error||"unknown error");
-  }catch(e){$("futuresMessage").textContent=e.message||"open failed"}
-}
-async function futuresMark(){
-  try{
-    const r=await futuresPaperApi("mark"); const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));
-    renderFuturesPaper(d);
-    const closed=(d.closed||[]).map(x=>x.symbol+" "+x.reason).join(", ");
-    if($("futuresMessage"))$("futuresMessage").textContent=closed?"Closed: "+closed:"Mark updated · no protective exit triggered";
-  }catch(e){$("futuresMessage").textContent=e.message||"mark failed"}
-}
-async function futuresFunding(){
-  try{
-    const r=await futuresPaperApi("funding"); const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));
-    renderFuturesPaper(d);
-    $("futuresMessage").textContent=d.ok?"Funding settled: $"+Number(d.funding_cashflow||0).toFixed(4):"Funding failed: "+(d.error||"unknown error");
-  }catch(e){$("futuresMessage").textContent=e.message||"funding failed"}
-}
-async function futuresClose(symbol){
-  if(!confirm("Close "+symbol+" in paper mode?"))return;
-  try{
-    const r=await futuresPaperApi("close",{symbol}); const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));
-    renderFuturesPaper(d);
-    $("futuresMessage").textContent=d.ok?"✓ "+symbol+" paper position closed":"Close failed: "+(d.error||"unknown error");
-  }catch(e){$("futuresMessage").textContent=e.message||"close failed"}
-}
-async function futuresReset(){
-  if(!confirm("Reset the futures paper account and its positions?"))return;
-  try{
-    const r=await futuresPaperApi("reset"); const d=await r.json().catch(()=>({ok:false,error:"invalid response"}));
-    renderFuturesPaper(d); futuresRefresh();
-    $("futuresMessage").textContent="Futures paper account reset.";
-  }catch(e){$("futuresMessage").textContent=e.message||"reset failed"}
-}
-
-function paperInitialize(){const msgEl=$("paperMessage");const btn=document.querySelector("[onclick=\"paperInitialize()\"]");const capital=$("paperCapital").value.trim();displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){msgEl.textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){msgEl.textContent="Enter a paper symbol.";return}if(btn){btn.disabled=true;btn.textContent="Initializing demo…"}msgEl.textContent="Initializing $"+capital+" paper account…";try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json().catch(()=>({ok:false,error:"invalid server response"}));if(r.status===401){msgEl.textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();if(!d.ok){const message="Initialization failed: "+(d.error||("HTTP "+r.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ $"+capital+" initialized · starting autonomous Top-50 AI worker…";const wr=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start"})});const wd=await wr.json().catch(()=>({ok:false,error:"worker response unavailable"}));if(!wr.ok||!wd.ok){const message="Paper account initialized, but autonomous worker could not start: "+(wd.error||("HTTP "+wr.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ Autonomous demo RUNNING · Top-50 scan + market intelligence + AI + risk engine";toast("Autonomous demo started — mobile independent")}catch(e){const message="Initialization failed: "+(e.message||"network error");msgEl.textContent=message;toast(message)}finally{if(btn){btn.disabled=false;btn.textContent="Start demo session"}}}
-async function paperCycle(){
-  if(executionMode!=="demo"){toast("Real mode is locked");return}
-  const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
-  if(d.ok && d.initialized){
-    const decision=(d.events||[]).find(e=>e.type==="STRATEGY_DECISION" && e.payload?.risk_decision==="APPROVED");
-    const hasPosition=(d.positions||[]).some(p=>p.symbol===d.symbol);
-    if(decision && !hasPosition){
-      const er=await paperApi("test_order",{symbol:d.symbol,side:decision.payload?.signal_direction==="SELL"?"sell":"buy"});
-      const ed=await er.json();
-      renderPaper(ed);
-      if(ed.ok){ $("paperMessage").textContent="DEMO execution filled from approved strategy signal"; playAlert(decision.payload?.signal_direction==="SELL"?"SELL":"BUY"); }
-    }
-  }
-  await loadLedger();
-  if(!d.ok && d.error) $("paperMessage").textContent=d.error;
-}
-async function paperToggleAuto(){
-  const action=autoDemoTimer?"stop":"start";
-  if(action==="start" && !$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
-  if(!requireDashboardAccess())return;
-  try{
-    const r=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
-    const d=await r.json();
-    if(r.status===401){$("paperMessage").textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}
-    if(!d.ok) throw new Error(d.error||"worker control failed");
-    if(action==="start"){
-      scanTop50();
-      autoDemoTimer=setInterval(async()=>{await refreshPaperStatus();},60000);
-      $("autoDemoBtn").textContent="Stop automatic demo";
-      toast("Autonomous Top-50 worker enabled · mobile independent");
-    }else{
-      clearInterval(autoDemoTimer);autoDemoTimer=null;
-      $("autoDemoBtn").textContent="Start automatic demo";
-      toast("Server demo worker stopped");
-    }
-  }catch(e){toast(e.message||"worker control failed")}
-}
-
-async function refreshAIStatus(){
-  try{
-    const r=await api("/api/ai/status",{cache:"no-store"});
-    const d=await r.json();
-    const b=$("aiStatusBadge"),t=$("aiStatusText");
-    if(!b||!t)return;
-    if(!d.enabled){b.textContent="AI OFF";t.textContent="Set OPENROUTER_API_KEY to enable the free-only AI gate.";return}
-    if(d.ok){b.textContent="FREE AI READY";t.textContent=(d.verified_free_models||0)+" verified $0 models · paid models blocked";}
-    else{b.textContent="AI HOLD";t.textContent=d.error||"Free-model registry unavailable; AI entries remain blocked."}
-  }catch(_){
-    const b=$("aiStatusBadge"),t=$("aiStatusText");if(b)b.textContent="AI UNKNOWN";if(t)t.textContent="AI status unavailable; no AI-authorized entry is permitted."
-  }
-}
-async function refreshAutonomousStatus(){
-  const badge=$("autoResearchBadge"),life=$("autoResearchLifecycle"),scannedEl=$("autoScanned"),aiEl=$("autoAIReviewed"),approvedEl=$("autoApproved");if(!badge)return;
-  try{
-    const workerRes=await fetch("/api/demo-worker",{headers:{"x-zerqen-dashboard-token":token()},cache:"no-store"}),worker=await workerRes.json().catch(()=>({}));
-    const paperRes=await api("/api/paper",{method:"GET"}),d=await paperRes.json().catch(()=>({}));
-    const events=(d.events||[]).slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-    const scan=events.find(e=>e.type==="AUTONOMOUS_MARKET_SCAN"),reviews=events.filter(e=>e.type==="AUTONOMOUS_AI_REVIEW");
-    const approvedEvents=events.filter(e=>e.type==="STRATEGY_DECISION"&&e.payload?.risk_decision==="APPROVED"&&e.payload?.strategy==="autonomous_top50_ai");
-    const latestReview=reviews[0],latestApproved=events.find(e=>e.type==="AUTONOMOUS_AI_REVIEW"&&e.payload?.status==="APPROVED");
-    const todayKey=new Date().toLocaleDateString(),aiToday=reviews.filter(e=>new Date(e.created_at).toLocaleDateString()===todayKey&&!["AI_COOLDOWN","AI_DAILY_CAP"].includes(String(e.payload?.status||""))).length;
-    const cap=Number(worker?.ai_daily_cap||40),hb=worker?.last_heartbeat?new Date(worker.last_heartbeat):null,interval=Number(worker?.interval_seconds||60);
-    const heartbeatFresh=hb&&(Date.now()-hb.getTime())<=Math.max(90000,interval*2500),running=Boolean(worker?.enabled&&heartbeatFresh);
-    badge.textContent=running?"RUNNING":worker?.enabled?"STALE / OFFLINE":"OFFLINE";badge.style.color=running?"var(--green)":"var(--amber)";
-    life.textContent=running?"worker heartbeat "+hb.toLocaleTimeString():"autonomous worker is not reporting";
-    if(scannedEl)scannedEl.textContent=scan?.payload?.scanned??"—";if(aiEl)aiEl.textContent=aiToday+"/"+cap;if(approvedEl)approvedEl.textContent=approvedEvents.length;
-    const setup=latestApproved?.payload||latestReview?.payload||{};$("autoCurrentSetup").textContent=setup.symbol?setup.symbol+" · "+(setup.side||setup.signal_direction||"—")+" · confidence "+(setup.ai_confidence==null?"—":(Number(setup.ai_confidence)*100).toFixed(0)+"%"):"No approved setup";
-    const reviewed=Array.isArray(latestReview?.payload?.reviewed)?latestReview.payload.reviewed:[],held=reviewed.filter(x=>x.status!=="AI_REVIEWED").slice(0,6);
-    $("autoRejectedCandidates").textContent=held.length?held.map(x=>x.symbol+" — "+(x.reason||x.status||"held")).join(" · "):"No rejected candidates in the latest AI review.";
-    let outcome="Waiting for first autonomous scan.";
-    if(latestReview){const rs=String(latestReview.payload?.status||"").toUpperCase();outcome=rs==="APPROVED"?"AI approved setup after deterministic risk gates.":rs==="NO_TRADE"?"No candidate passed deterministic risk gates and AI confirmation.":rs==="AI_COOLDOWN"?"Same setup is in AI cooldown; waiting for material change.":rs==="AI_DAILY_CAP"?"AI daily safety cap reached; no further autonomous reviews today.":rs==="AI_BLOCKED"?"AI free-only safety gate blocked review.":"Latest autonomous review: "+rs;}
-    else if(scan)outcome=String(scan.payload?.usable_candidates??0)+" candidates eligible after quantitative Top-50 scan.";
-    $("autoResearchOutcome").textContent=outcome;
-    const lastScan=scan?.created_at?new Date(scan.created_at).toLocaleTimeString():"—";$("autoResearchMeta").textContent="Worker heartbeat: "+(hb?hb.toLocaleTimeString():"—")+" · Last scan: "+lastScan+" · Universe: "+(scan?.payload?.scanned??50);
-  }catch(e){badge.textContent="UNKNOWN";badge.style.color="var(--amber)";life.textContent="autonomous observability unavailable";}
-}
-
-async function refreshMarketIntelligence(){
-  const grid=$("marketIntelGrid"),badge=$("aiRuntimeBadge");if(!grid)return;
-  try{
-    const rawSymbol=($("paperSymbol")?.value||"BTC/USDT").trim().toUpperCase(),symbol=rawSymbol.startsWith("AUTO/")?"BTC/USDT":rawSymbol;
-    const r=await api("/api/market-intelligence?symbol="+encodeURIComponent(symbol)+"&exchange=binance",{cache:"no-store"}),d=await r.json();if(!d.ok)throw new Error(d.error||"report unavailable");
-    const x=d.report||{},one=x.timeframes?.["1h"]||{},four=x.timeframes?.["4h"]||{},day=x.timeframes?.["1d"]||{},der=x.derivatives||{},opt=x.options||{},risk=x.risk||{},structure=x.market_structure||{},sets=x.setup_candidates||[];
-    const ema=tf=>tf&&tf.ema9&&tf.ema21?(tf.ema9>tf.ema21?"bullish":"bearish"):"—",val=(v,d=2)=>v==null?"—":Number(v).toFixed(d);
-    const rows=[["regime",structure.regime||"—"],["bias",structure.bias||"—"],["1h rsi",val(one.rsi14,1)],["1h macd",val(one.macd?.macd,4)],["1h adx",val(one.adx14,1)],["1h ema 9/21",ema(one)],["1h ema 50/200",one.ema50&&one.ema200?(one.ema50>one.ema200?"bullish":"bearish"):"—"],["4h trend",ema(four)],["1d trend",ema(day)],["atr",one.atr_pct==null?"—":(Number(one.atr_pct)*100).toFixed(2)+"%"],["volume",one.volume_ratio==null?"—":Number(one.volume_ratio).toFixed(2)+"x"],["support",val(one.support,4)],["resistance",val(one.resistance,4)],["funding",der.funding_rate==null?"unavailable":der.funding_rate],["mark / index",der.mark_price&&der.index_price?val(der.mark_price,4)+" / "+val(der.index_price,4):"unavailable"],["open interest",der.open_interest==null?"unavailable":der.open_interest],["futures expiry",der.expiry_risk||"unavailable"],["options expiry",opt.nearest_expiry||"unavailable"],["setup",sets[0]?.name||"NO TRADE"],["risk gate",risk.volatility_ok?"PASS":"BLOCK"],["data quality",x.data_quality?.score==null?"—":(Number(x.data_quality.score)*100).toFixed(0)+"%"]];
-    grid.innerHTML=rows.map(([k,v])=>"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.12);gap:12px'><span>"+k+"</span><strong>"+esc(v)+"</strong></div>").join("")+"<div style='margin-top:10px;color:var(--muted);font-size:10px'>Trade plan context: "+(sets.length?sets.map(s=>esc(s.side)+" "+esc(s.name)+" · R:R "+esc(s.risk_reward)).join(" · "):"no executable setup")+"</div><div style='margin-top:6px;color:var(--muted);font-size:10px'>Report hash: "+esc(x.report_hash||"—")+"</div>";
-    if(badge){badge.textContent="REPORT READY";badge.className="badge";}
-  }catch(e){if(grid)grid.textContent="Market intelligence unavailable: "+e.message;if(badge)badge.textContent="REPORT ERROR";}
-}
-async function refreshPaperStatus(){
-  try{const r=await api("/api/paper",{method:"GET"});const d=await r.json();renderPaper(d);await loadLedger();await refreshAutonomousStatus()}catch(e){}
-}
-async function paperTestOrder(){const r=await paperApi("test_order",{symbol:$("paperSymbol").value.trim().toUpperCase(),side:"buy"});const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
-async function paperPause(){const r=await paperApi("pause");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session paused":"Pause failed")}
-async function paperResume(){const r=await paperApi("resume");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session resumed":"Resume failed")}
-async function paperHalt(){const r=await paperApi("halt");const d=await r.json();renderPaper(d);toast(d.ok?"HALT NEW ORDERS active":"Could not halt")}
-async function paperFlatten(){const r=await paperApi("flatten");const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Paper positions flattened":"Flatten failed")}
-async function paperReset(){if(!confirm("Reset PAPER account only? This cannot affect exchange accounts, credentials, or production state."))return;const r=await paperApi("reset");const d=await r.json();renderPaper(d);toast(d.ok?"Paper account reset":"Reset failed")}
-
-function fillPaperExchanges(){const s=$("paperExchange");if(!s||s.options.length)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)));s.value="binance";$("paperCurrency")?.addEventListener("change",loadFx)}
-function renderEquity(){const e=$("equityChart");if(e)e.innerHTML="<div class='empty'>No persisted equity snapshots yet. Live account value is shown after an exchange connection.</div>"}
-function esc(v){return String(v==null?"—":v).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]))}
-function pct(v){return fmt(Number(v||0)*100,2)+"%"}
-function money(v){return (Number(v||0)>=0?"+":"")+"$"+fmt(v)}
-function ledgerParams(){const p=new URLSearchParams();const map={date_from:"ledgerFrom",date_to:"ledgerTo",exchange:"ledgerExchange",symbol:"ledgerSymbol",strategy:"ledgerStrategy",side:"ledgerSide",status:"ledgerStatus",q:"ledgerSearch"};Object.entries(map).forEach(([k,id])=>{const v=$(id)?.value?.trim();if(v)p.set(k,v)});return p}
-function fillLedgerExchanges(){const s=$("ledgerExchange");if(!s||s.options.length>1)return;exchanges.forEach(([id,name])=>s.add(new Option(name,id)))}
-function renderLedgerSummary(d){
-  const a=d.account||{},s=d.summary||{};const cards=[
-    ["Starting Capital",a.starting_capital],["Current Equity",a.current_equity],["Available Capital",a.available_capital],
-    ["Reserved Capital",a.reserved_capital],["Realized P&L",a.realized_pnl],["Unrealized P&L",a.unrealized_pnl],
-    ["Net P&L",a.net_pnl],["Fees",a.fees],["Slippage",a.slippage],["Actual Return",a.actual_return,"pct"],
-    ["Research Hurdle",d.research_hurdle,"pct"],["Trading Days",(d.daily_compounding||[]).length,"count"],
-    ["Winning Trades",s.winning_trades,"count"],["Losing Trades",s.losing_trades,"count"],["Win Rate",s.win_rate,"pct"],["Max Drawdown",a.max_drawdown,"pct"]
-  ];
-  const html=cards.map(([k,v,t])=>"<div class='card metric'><label>"+k+"</label><strong>"+(t==="pct"?pct(v):(typeof v==="number"?"$"+fmt(v):fmt(v)))+"</strong></div>").join("");
-  $("ledgerSummary").innerHTML=html;$("compSummary").innerHTML=html;
-}
-function renderEquityHistory(d){
-  const e=$("ledgerEquityChart"),rows=d.equity_snapshots||[];if(!e)return;if(!rows.length){e.innerHTML="<div class='empty'>No persisted equity snapshots.</div>";return}
-  const w=1100,h=300,p=28,vals=rows.map(x=>Number(x.equity)),min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
-  const x=i=>p+i*(w-2*p)/Math.max(1,rows.length-1),y=v=>h-p-(v-min)/range*(h-2*p);
-  const actual=rows.map((r,i)=>(i?"L":"M")+x(i).toFixed(1)+" "+y(Number(r.equity)).toFixed(1)).join(" ");
-  const start=Number(d.account?.starting_capital||0);
-  const startingLine=rows.map((r,i)=>(i?"L":"M")+x(i).toFixed(1)+" "+y(start).toFixed(1)).join(" ");
-  const firstTs=rows[0]?.created_at?new Date(rows[0].created_at).getTime():0;
-  const hurdle=rows.map((r,i)=>{const ts=new Date(r.created_at).getTime();const day=Math.max(0,Math.floor((ts-firstTs)/86400000));return(i?"L":"M")+x(i).toFixed(1)+" "+y(start*Math.pow(1.08,day)).toFixed(1)}).join(" ");
-  e.innerHTML="<svg viewBox='0 0 "+w+" "+h+"' preserveAspectRatio='none'><path class='ledger-hurdle' d='"+hurdle+"'/><path class='ledger-start' d='"+startingLine+"'/><path class='ledger-line' d='"+actual+"'/></svg><div class='section-note'>solid = actual persisted equity · baseline = starting equity · dashed = 8% research reference only, never a forecast or trading trigger</div>";
-}
-function renderLedgerTables(d){
-  const tr=(d.trades||[]).slice();const sort=$("ledgerSort")?.value||"latest";tr.sort((a,b)=>{if(sort==="oldest")return new Date(a.exit_timestamp)-new Date(b.exit_timestamp);if(sort==="net_desc")return Number(b.net_pnl)-Number(a.net_pnl);if(sort==="net_asc")return Number(a.net_pnl)-Number(b.net_pnl);if(sort==="symbol")return String(a.symbol||"").localeCompare(String(b.symbol||""));return new Date(b.exit_timestamp)-new Date(a.exit_timestamp)});$("ledgerTradeRows").innerHTML=tr.length?tr.map(t=>"<tr data-trade='"+esc(t.trade_id)+"' onclick='openTradeDetail(\""+esc(t.trade_id)+"\")'><td>"+esc(t.trade_id)+"</td><td>"+new Date(t.exit_timestamp).toLocaleString()+"</td><td>"+esc(t.exchange_id)+"</td><td>"+esc(t.symbol)+"</td><td>"+esc(t.timeframe)+"</td><td>"+esc(String(t.side||"").toUpperCase())+"</td><td>"+esc(t.strategy)+"</td><td>$"+fmt(t.entry_price)+"</td><td>$"+fmt(t.exit_price)+"</td><td>"+fmt(t.quantity,6)+"</td><td>$"+fmt(t.risk_at_entry)+"</td><td>"+money(t.gross_pnl)+"</td><td>$"+fmt(t.fees)+"</td><td>$"+fmt(t.slippage)+"</td><td class='"+(Number(t.net_pnl)>=0?"positive":"negative")+"'>"+money(t.net_pnl)+"</td><td>"+fmt(t.r_multiple,2)+"R</td><td>$"+fmt(t.opening_equity)+"</td><td>$"+fmt(t.closing_equity)+"</td><td>"+esc(t.status)+"</td></tr>").join(""):"<tr><td colspan='19' class='empty'>No persisted paper trades.</td></tr>";
-  const dec=d.decisions||[];$("ledgerDecisionRows").innerHTML=dec.length?dec.map(x=>"<tr><td>"+new Date(x.signal_timestamp).toLocaleString()+"</td><td>"+esc(x.signal_id)+"</td><td>"+esc(x.symbol)+"</td><td>"+esc(x.strategy)+"</td><td>"+esc(x.signal_direction)+"</td><td>"+esc(x.risk_decision)+"</td><td>"+(x.rejected?"YES":"NO")+"</td><td>"+esc(x.rejection_reason)+"</td><td>"+pct(x.daily_loss/(Number(d.account?.current_equity)||1))+"</td><td>"+pct(x.drawdown)+"</td><td>$"+fmt(x.gross_exposure)+"</td></tr>").join(""):"<tr><td colspan='11' class='empty'>No decisions persisted.</td></tr>";
-  const daily=d.daily_compounding||[];$("dailyCompRows").innerHTML=daily.length?daily.map(x=>"<tr><td>"+esc(x.date)+"</td><td>"+x.trading_day+"</td><td>$"+fmt(x.opening_equity)+"</td><td>$"+fmt(x.research_hurdle_amount)+"</td><td>"+money(x.actual_gross_pnl)+"</td><td>$"+fmt(x.fees)+"</td><td>$"+fmt(x.slippage)+"</td><td class='"+(x.net_pnl>=0?"positive":"negative")+"'>"+money(x.net_pnl)+"</td><td>$"+fmt(x.closing_equity)+"</td><td>"+pct(x.actual_return)+"</td><td>"+pct(x.drawdown)+"</td><td>"+x.trades+"</td><td>"+x.winning_trades+"</td><td>"+x.losing_trades+"</td><td>"+esc(x.status)+"</td></tr>").join(""):"<tr><td colspan='15' class='empty'>No persisted daily history.</td></tr>";
-  const audit=d.audit_log||[];$("auditRows").innerHTML=audit.length?audit.map(x=>"<tr><td>"+new Date(x.created_at).toLocaleString()+"</td><td>"+esc(x.event_id)+"</td><td>"+esc(x.event_type)+"</td><td>"+esc(JSON.stringify(x.payload))+"</td></tr>").join(""):"<tr><td colspan='4' class='empty'>No audit events.</td></tr>";
-  const rh=d.equity_snapshots||[];$("riskHistoryRows").innerHTML=rh.length?rh.slice().reverse().map(x=>"<tr><td>"+new Date(x.created_at).toLocaleString()+"</td><td>$"+fmt(x.equity)+"</td><td>$"+fmt(x.cash)+"</td><td>$"+fmt(x.realized_pnl)+"</td><td>$"+fmt(x.unrealized_pnl)+"</td><td>$"+fmt(x.gross_exposure)+"</td><td>$"+fmt(x.open_risk)+"</td><td>"+pct(x.allocation)+"</td><td>"+pct(x.drawdown)+"</td><td>"+money(x.daily_pnl)+"</td><td>"+money(x.cumulative_pnl)+"</td></tr>").join(""):"<tr><td colspan='11' class='empty'>No persisted snapshots.</td></tr>";
-}
-async function loadLedger(){if(!token())return;try{const res=await api("/api/ledger?"+ledgerParams().toString(),{cache:"no-store"});const d=await res.json();if(!res.ok||!d.ok){toast(d.error||"Ledger unavailable");return}fillLedgerExchanges();renderLedgerSummary(d);renderEquityHistory(d);renderLedgerTables(d)}catch(_){toast("Ledger unavailable")}}
-function detailSection(title,items){return "<div class='section'><div class='section-head'><div><h3>"+title+"</h3></div></div><div class='detail-grid'>"+items.map(([k,v])=>"<div class='detail-item'><label>"+esc(k)+"</label><strong>"+esc(v)+"</strong></div>").join("")+"</div></div>"}
-async function openTradeDetail(id){
-  $("tradeDrawer").classList.add("open");
-  $("tradeDrawerBody").textContent="Loading authoritative trade record…";
-  try{
-    const res=await api("/api/ledger/trade/"+encodeURIComponent(id),{cache:"no-store"});
-    const d=await res.json();
-    if(!d.ok){$("tradeDrawerBody").textContent=d.error||"Trade unavailable";return}
-    const t=d.trade,r=d.risk_decision||{};
-    const v=x=>x==null?"—":(typeof x==="number"?fmt(x):String(x));
-    $("tradeDrawerTitle").textContent="Trade "+t.trade_id;
-    const parts=[
-      detailSection("SIGNAL",[["Signal timestamp",t.signal_timestamp],["Strategy",t.strategy],["Timeframe",t.timeframe],["Market regime",t.regime],["Signal direction",r.signal_direction],["EMA 9",v(r.ema9)],["EMA 21",v(r.ema21)],["RSI",v(r.rsi)],["ATR",v(r.atr)]]),
-      detailSection("RISK DECISION",[["Risk per trade",v(r.risk_per_trade)],["Aggregate open risk",v(r.aggregate_open_risk)],["Open positions",v(r.open_positions)],["Daily loss",v(r.daily_loss)],["Drawdown",pct(r.drawdown)],["Gross exposure",v(r.gross_exposure)],["Allocation",pct(r.allocation)],["Risk decision",r.risk_decision]]),
-      detailSection("EXECUTION",[["Order ID",(t.entry_order_id||"—")+" → "+(t.exit_order_id||"—")],["Order creation",t.entry_timestamp],["Fill time",t.exit_timestamp],["Requested entry",v(d.entry_fill?.requested_price)],["Actual entry fill",v(d.entry_fill?.actual_price)],["Requested exit",v(d.exit_fill?.requested_price)],["Actual exit fill",v(d.exit_fill?.actual_price)],["Quantity",v(t.quantity)],["Fees",v(t.fees)],["Slippage",v(t.slippage)],["Order status",t.status]]),
-      detailSection("POSITION",[["Entry",v(t.entry_price)],["Exit",v(t.exit_price)],["Stop",v(t.stop_price)],["Target",v(t.target_price)],["Duration",v(t.duration_seconds)+"s"],["Realized P&L",money(t.net_pnl)],["R multiple",v(t.r_multiple)+"R"]]),
-      detailSection("EQUITY IMPACT",[["Opening equity",v(t.opening_equity)],["Capital allocated",v(t.risk_at_entry)],["Closing equity",v(t.closing_equity)],["Net equity change",money(Number(t.closing_equity)-Number(t.opening_equity))]]),
-      "<div class='section'><div class='small-title'>AUDIT EVENTS</div><div class='section-note'>"+esc(JSON.stringify(d.audit_events||[]))+"</div></div>"
-    ];
-    $("tradeDrawerBody").innerHTML=parts.join("");
-  }catch(_){$("tradeDrawerBody").textContent="Trade detail unavailable"}
-}
-function closeTradeDetail(){$("tradeDrawer").classList.remove("open")}
-async function exportLedger(format){if(!token()){toast("Dashboard token required");return}try{const res=await api("/api/ledger/export?format="+format+"&"+ledgerParams().toString(),{cache:"no-store"});if(!res.ok){const d=await res.json();toast(d.error||"Export failed");return}const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=format==="xlsx"?"zerqen-trade-ledger.xlsx":"zerqen-trade-ledger.csv";a.click();URL.revokeObjectURL(url);toast("Authoritative ledger exported")}catch(_){toast("Export failed")}}
-selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
-setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
-setInterval(loadMarket,30000);
-setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);setInterval(refreshAutonomousStatus,15000);refreshAIStatus();refreshMarketIntelligence();refreshAutonomousStatus();
 setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
 
 </script>
