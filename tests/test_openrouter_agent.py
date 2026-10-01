@@ -35,3 +35,27 @@ def test_new_free_model_is_discovered(monkeypatch):
     registry = agent.FreeModelRegistry()
     models = registry.refresh(force=True)
     assert any(m.model_id == 'new-free' for m in models)
+
+
+def test_malformed_ai_choice_is_treated_as_retryable(monkeypatch):
+    registry = agent.FreeModelRegistry()
+    registry._models = [agent.FreeModel('free-a', Decimal(0), Decimal(0), 1000)]
+    monkeypatch.setattr(agent, 'REGISTRY', registry)
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'test')
+    monkeypatch.setattr(agent, '_http_json', lambda method, url, payload=None: {'choices': [None]})
+    result = agent.evaluate_setup({'signal': 'BUY'})
+    assert result['decision'] == 'HOLD'
+    assert result['confidence'] == 0.0
+    assert result['risk_flags'] == ['AI_FALLBACK_EXHAUSTED']
+    assert result['attempts'][0]['error'] == 'ValueError'
+
+
+def test_malformed_ai_message_is_treated_as_retryable(monkeypatch):
+    registry = agent.FreeModelRegistry()
+    registry._models = [agent.FreeModel('free-a', Decimal(0), Decimal(0), 1000)]
+    monkeypatch.setattr(agent, 'REGISTRY', registry)
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'test')
+    monkeypatch.setattr(agent, '_http_json', lambda method, url, payload=None: {'choices': [{'message': []}]})
+    result = agent.evaluate_setup({'signal': 'SELL'})
+    assert result['decision'] == 'HOLD'
+    assert result['attempts'][0]['error'] == 'ValueError'
