@@ -399,6 +399,47 @@ def action(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=
                 conn.commit()
                 return {**_payload(conn), "funding_cashflow": str(total)}
 
+            if action_name == "partial_close":
+                symbol = str(payload.get("symbol", "")).upper()
+                row = conn.execute(
+                    "SELECT position_id,symbol,side,quantity,entry_price,initial_margin,entry_fee,funding FROM zerqen_futures_paper_positions WHERE account_id='default' AND symbol=%s",
+                    (symbol,),
+                ).fetchone()
+                if not row:
+                    raise HTTPException(404, "futures position not found")
+                close_qty = D(str(payload.get("quantity", "0")))
+                current_qty = D(str(row[3]))
+                if close_qty <= 0 or close_qty >= current_qty:
+                    raise HTTPException(400, "partial close quantity must be greater than 0 and less than current quantity")
+                mark, _ = _mark_price(symbol)
+                fraction = close_qty / current_qty
+                allocated_margin = D(str(row[5])) * fraction
+                allocated_entry_fee = D(str(row[6])) * fraction
+                fee = mark * close_qty * DEFAULT_FEE_RATE
+                gross = (mark - D(str(row[4]))) * close_qty * (D("1") if str(row[2]) == "buy" else D("-1"))
+                realized = gross - allocated_entry_fee - fee
+                remaining_qty = current_qty - close_qty
+                remaining_margin = D(str(row[5])) - allocated_margin
+                remaining_entry_fee = D(str(row[6])) - allocated_entry_fee
+                remaining_funding = D(str(row[7])) * (D("1") - fraction)
+                conn.execute(
+                    """UPDATE zerqen_futures_paper_positions
+                    SET quantity=%s,initial_margin=%s,entry_fee=%s,funding=%s,realized_pnl=realized_pnl+%s,updated_at=%s
+                    WHERE position_id=%s""",
+                    (remaining_qty, remaining_margin, remaining_entry_fee, remaining_funding, realized, _now(), row[0]),
+                )
+                conn.execute(
+                    "UPDATE zerqen_futures_paper_state SET cash=cash+%s,realized_pnl=realized_pnl+%s,fees=fees+%s,updated_at=%s WHERE account_id='default'",
+                    (allocated_margin + gross - fee, realized, fee, _now()),
+                )
+                _event(conn, "FUTURES_PARTIAL_CLOSE", {
+                    "position_id": row[0], "symbol": symbol, "side": row[2],
+                    "closed_quantity": str(close_qty), "remaining_quantity": str(remaining_qty),
+                    "mark_price": str(mark), "realized_pnl": str(realized), "fee": str(fee),
+                })
+                conn.commit()
+                return _payload(conn)
+
             if action_name == "close":
                 symbol = str(payload.get("symbol", "")).upper()
                 row = conn.execute(
