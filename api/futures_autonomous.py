@@ -45,6 +45,13 @@ def cycle(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=N
             closed=_apply_marks(conn)
         except Exception as exc:
             closed=[]; _event(conn,"FUTURES_MARK_ERROR",{"error":type(exc).__name__})
+        state=_state(conn)
+        values=_equity(conn); eq,upnl,gross,dd,daily,metrics=values
+        if bool(state[13]) or eq>=D(str(state[12])):
+            conn.execute("UPDATE zerqen_futures_paper_state SET daily_target_hit=TRUE,updated_at=%s WHERE account_id='default'",(_now(),))
+            _event(conn,"FUTURES_DAILY_TARGET_REACHED",{"equity":str(eq),"target":str(state[12])})
+            conn.commit()
+            return {"ok":True,"autonomous":True,"trade":False,"reason":"DAILY_TARGET_REACHED","equity":float(eq),"daily_target":float(state[12]),"closed":closed}
         candidates=scan_top50(50)
         eligible=[x for x in candidates if x.get("side") in {"BUY","SELL"} and x.get("volatility_ok") and x.get("liquidity_ok")]
         if not eligible:
