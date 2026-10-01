@@ -9,6 +9,12 @@
 
 ---
 
+## Architecture reference
+
+The consolidated system architecture is maintained in `docs/ZERQEN_ARCHITECTURE.md`. It covers the control plane, persistent Voroa worker, Spot/Futures isolation, autonomous decision pipeline, AI/risk hierarchy, compounding, paper/testnet/live boundaries, ledger, reconciliation, market data, dashboard, worker lifecycle, failure handling, observability, testing, and the distinction between current implementation and target production architecture.
+
+Any material architecture change must update both this architecture document and this master context.
+
 ## 1. Product mission
 
 ZERQEN is an autonomous quantitative crypto **paper-trading and research system** designed to continuously scan markets, perform structured AI analysis, apply deterministic risk controls, simulate trades, maintain durable accounting, and compound from actual equity.
