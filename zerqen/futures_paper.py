@@ -24,6 +24,9 @@ class FuturesLimits:
     risk_per_trade: Decimal = RISK_PER_TRADE
     max_margin_allocation: Decimal = MAX_MARGIN_ALLOCATION
     max_gross_exposure: Decimal = MAX_GROSS_EXPOSURE
+    daily_loss: Decimal = D("0.03")
+    max_drawdown: Decimal = D("0.20")
+    max_stop_distance: Decimal = D("0.08")
 
 
 @dataclass(frozen=True)
@@ -169,6 +172,8 @@ def size_futures_position(
     distance = entry_price - stop_price if side == "buy" else stop_price - entry_price
     if distance <= 0:
         return FuturesRisk(False, "stop must be beyond entry", ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO)
+    if distance / entry_price > limits.max_stop_distance:
+        return FuturesRisk(False, "stop distance exceeds configured capital-protection limit", ZERO, ZERO, ZERO, ZERO, ZERO, stop_price, ZERO, equity * limits.risk_per_trade)
     risk_amount = equity * limits.risk_per_trade
     quantity = (risk_amount / distance).quantize(D("0.00000001"), rounding=ROUND_DOWN)
     notional = quantity * entry_price
