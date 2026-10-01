@@ -329,12 +329,16 @@ def status_payload(conn):
     state = get_state(conn)
     if not state:
         return {"ok": True, "initialized": False, "mode": "PAPER", "live_trading": False}
-    symbols = [str(state[13])]
+    # Do not block dashboard/start requests on remote market data when there is no open position.
+    # The live chart has its own market endpoint; paper state only needs a mark while positions exist.
+    open_positions = fetch_positions(conn)
+    symbols = [str(p.symbol) for p in open_positions]
     prices = {}
-    try:
-        prices = fetch_prices(str(state[12]), symbols, str(state[14]))
-    except Exception:  # noqa: BLE001
-        prices = {}
+    if symbols:
+        try:
+            prices = fetch_prices(str(state[12]), symbols, str(state[14]))
+        except Exception:  # noqa: BLE001
+            prices = {}
     values = equity(conn, prices) if prices else None
     eq = values[0] if values else D(str(state[2]))
     unrealized = values[1] if values else D(0)
