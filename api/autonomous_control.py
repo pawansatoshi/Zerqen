@@ -36,6 +36,11 @@ def action(payload:dict,x_zerqen_dashboard_token:str|None=Header(default=None)):
         _ensure(c);now=datetime.now(timezone.utc)
         if name=="start":
             c.execute("UPDATE zerqen_autonomous_market SET enabled=TRUE,stop_requested=FALSE,stage='STARTING',stage_message=%s,last_error=NULL,updated_at=%s WHERE market=%s",("Initializing "+market.upper()+" autonomous engine",now,market))
+            try:
+                from api.demo_worker import set_enabled
+                set_enabled(True)
+            except Exception:
+                pass
         elif name=="stop":
             c.execute("UPDATE zerqen_autonomous_market SET stop_requested=TRUE,stage='STOP_REQUESTED',stage_message=%s,updated_at=%s WHERE market=%s",("New "+market.upper()+" entries locked; existing positions remain protected",now,market))
         elif name=="stage":
