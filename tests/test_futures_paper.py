@@ -73,3 +73,9 @@ def test_stop_cannot_be_beyond_liquidation():
 def test_leverage_is_hard_capped():
     with pytest.raises(ValueError):
         validate_leverage(D("6"))
+
+
+def test_futures_stop_respects_eight_percent_cap():
+    result = size_futures_position(D("10000"), D("100"), D("90"), "buy", D("2"))
+    assert not result.allowed
+    assert "capital-protection" in result.reason
