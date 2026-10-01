@@ -863,40 +863,87 @@ async function openTradeDetail(id){
 }
 function closeTradeDetail(){$("tradeDrawer").classList.remove("open")}
 async function exportLedger(format){if(!token()){toast("Dashboard token required");return}try{const res=await api("/api/ledger/export?format="+format+"&"+ledgerParams().toString(),{cache:"no-store"});if(!res.ok){const d=await res.json();toast(d.error||"Export failed");return}const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=format==="xlsx"?"zerqen-trade-ledger.xlsx":"zerqen-trade-ledger.csv";a.click();URL.revokeObjectURL(url);toast("Authoritative ledger exported")}catch(_){toast("Export failed")}}
+function stageClass(stage){const s=String(stage||"IDLE").toUpperCase();return s.includes("RISK")||s.includes("HALT")?"stage-risk":s.includes("WAIT")?"stage-waiting":s==="IDLE"?"":"stage-running"}
+function renderAutonomousEngines(d){
+  const engines=d.engines||[],now=Date.now();
+  const feed=[];
+  engines.forEach(e=>{
+    const key=e.market==="spot"?"spot":"futures",badge=$(key+"AutoBadge"),stage=$(key+"AutoStage"),symbol=$(key+"AutoSymbol"),start=$(key+"AutoStart"),stop=$(key+"AutoStop");
+    if(!badge)return;
+    badge.textContent=e.stop_requested?"STOPPING":e.enabled?(e.stage||"RUNNING"):"IDLE";
+    badge.className="badge "+stageClass(e.stage);
+    stage.textContent=e.stage_message||"Engine idle";
+    stage.className="sub "+stageClass(e.stage);
+    symbol.textContent=e.active_symbol?("Active: "+e.active_symbol):"No active position";
+    start.disabled=!!e.enabled||!!e.stop_requested;
+    stop.disabled=!e.enabled&&!e.stop_requested;
+    feed.push({market:e.market.toUpperCase(),stage:e.stage||"IDLE",message:e.stage_message||"Engine idle",time:e.heartbeat_at});
+  });
+  const host=$("autonomousFeed");
+  if(host)host.innerHTML=feed.map(e=>"<div class='autonomous-event'><span>"+(e.time?new Date(e.time).toLocaleTimeString():"—")+"</span><span class='autonomous-market'>"+e.market+"</span><span><strong>"+esc(e.stage)+"</strong> · "+esc(e.message)+"</span></div>").join("");
+}
 async function globalAutonomousStatus(){
+  if(!token())return;
   try{
     const r=await api("/api/autonomous",{cache:"no-store"}),d=await r.json();if(!d.ok)return;
-    const title=$("globalEngineTitle"),sub=$("globalEngineSub"),start=$("autonomousStartBtn"),stop=$("autonomousStopBtn");
-    if(d.stop_requested){title.textContent="STOP REQUESTED";sub.textContent="New entries are locked. Existing Spot/Futures positions remain under protective management.";start.disabled=true;stop.disabled=true}
-    else if(d.enabled){title.textContent="Autonomous engine running";sub.textContent="Top-50 research + AI review + risk gates + position management are running server-side.";start.disabled=true;stop.disabled=false}
-    else{title.textContent="Autonomous engine idle";sub.textContent="Press Start once. The backend worker remains independent of this browser.";start.disabled=false;stop.disabled=true}
+    renderAutonomousEngines(d);
+    const worker=await api("/api/demo-worker",{cache:"no-store"}).then(x=>x.json()).catch(()=>({}));
+    const wb=$("voroaWorkerBadge");
+    if(wb)wb.textContent=worker.enabled?"VOROA WORKER · ONLINE":"VOROA WORKER · STANDBY";
+    const running=(d.engines||[]).some(e=>e.enabled||e.stop_requested);
+    $("engineState").textContent=running?"AUTONOMOUS":"READY";
+    await refreshLiveTradeMonitor(d);
   }catch(_){}
 }
-async function startAutonomousEngine(){
+async function startMarketAutonomous(market){
   if(!requireDashboardAccess())return;
-  const start=$("autonomousStartBtn");if(start)start.disabled=true;
+  const btn=$(market+"AutoStart");if(btn)btn.disabled=true;
   try{
-    const spot=await api("/api/paper",{cache:"no-store"}).then(r=>r.json());
-    if(!spot.initialized){
-      const capital=($("paperCapital")?.value||"1000").trim();
-      const cfg=paperConfig();
-      const ir=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const id=await ir.json();if(!id.ok)throw new Error(id.error||"Spot initialization failed");
+    if(market==="spot"){
+      const spot=await api("/api/paper",{cache:"no-store"}).then(r=>r.json());
+      if(!spot.initialized){
+        const capital=($("paperCapital")?.value||"1000").trim();
+        const id=await paperApi("initialize",Object.assign({starting_capital:capital},paperConfig())).then(r=>r.json());
+        if(!id.ok)throw new Error(id.error||"Spot initialization failed");
+      }
+    }else{
+      const fut=await api("/api/futures-paper",{cache:"no-store"}).then(r=>r.json());
+      if(!fut.initialized){
+        const capital=($("futCapital")?.value||"1000").trim();
+        const id=await futuresPaperApi("initialize",{starting_capital:capital}).then(r=>r.json());
+        if(!id.ok)throw new Error(id.error||"Futures initialization failed");
+      }
     }
-    const fut=await api("/api/futures-paper",{cache:"no-store"}).then(r=>r.json());
-    if(!fut.initialized){
-      const capital=($("futCapital")?.value||"1000").trim();
-      const ir=await futuresPaperApi("initialize",{starting_capital:capital});const id=await ir.json();if(!id.ok)throw new Error(id.error||"Futures initialization failed");
-    }
-    const r=await api("/api/autonomous",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start"})}),d=await r.json();if(!d.ok)throw new Error(d.error||"could not start autonomous engine");
-    toast("Autonomous engine started · Spot + Futures");
-    await Promise.all([loadPaper(),futuresRefresh(),globalAutonomousStatus()]);
-  }catch(e){toast(e.message||"autonomous start failed");if(start)start.disabled=false}
+    const r=await api("/api/autonomous",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start",market})}),d=await r.json();
+    if(!d.ok)throw new Error(d.error||("could not start "+market));
+    toast(market.toUpperCase()+" autonomous engine started");
+    await globalAutonomousStatus();
+  }catch(e){toast(e.message||("failed to start "+market));if(btn)btn.disabled=false}
 }
-async function stopAutonomousEngine(){
+async function stopMarketAutonomous(market){
   if(!requireDashboardAccess())return;
-  const r=await api("/api/autonomous",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"stop"})}),d=await r.json();
+  const r=await api("/api/autonomous",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"stop",market})),d=await r.json();
   if(!d.ok){toast(d.error||"stop request failed");return}
-  toast("Stop requested · new entries locked, positions still managed");globalAutonomousStatus();
+  toast(market.toUpperCase()+" stop requested · existing positions remain protected");
+  await globalAutonomousStatus();
+}
+async function refreshLiveTradeMonitor(state){
+  try{
+    const engines=state?.engines||[],spot=engines.find(x=>x.market==="spot")||{},fut=engines.find(x=>x.market==="futures")||{};
+    const sd=await api("/api/paper",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}));
+    const fd=await api("/api/futures-paper",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}));
+    const sp=(sd.positions||[])[0],fp=(fd.positions||[])[0];
+    $("spotLiveSymbol").textContent=sp?("SPOT · "+sp.symbol):"SPOT · "+(spot.stage||"WAITING");
+    $("spotLiveState").textContent=sp?"IN POSITION":(spot.stage||"IDLE");
+    $("spotLivePrice").textContent=sp?("Entry $"+fmt(sp.average_entry)+" · P&L "+money(sp.unrealized_pnl||0)):(spot.stage_message||"No active Spot position");
+    $("spotLiveLevels").innerHTML=sp?("<span class='entry'>ENTRY $"+fmt(sp.average_entry)+"</span><span class='stop'>MANAGED BY RISK ENGINE</span>"):"";
+    $("futuresLiveSymbol").textContent=fp?("FUTURES · "+fp[1]):"FUTURES · "+(fut.stage||"WAITING");
+    $("futuresLiveState").textContent=fp?"IN POSITION":(fut.stage||"IDLE");
+    $("futuresLivePrice").textContent=fp?("Entry $"+fmt(fp[4])+" · Leverage "+fmt(fp[5],1)+"x"):(fut.stage_message||"No active Futures position");
+    $("futuresLiveLevels").innerHTML=fp?("<span class='entry'>ENTRY $"+fmt(fp[4])+"</span><span class='stop'>STOP $"+fmt(fp[9])+"</span><span class='target'>TARGET $"+fmt(fp[10])+"</span>"):"";
+    if(fp&&window.loadOverviewFuturesChart)window.loadOverviewFuturesChart(fp[1]);
+    if(!sp)$("spotLiveChart").innerHTML="<div class='empty'>No active Spot position · research/status remains visible above.</div>";
+  }catch(_){}
 }
 selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();futuresRefresh();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
