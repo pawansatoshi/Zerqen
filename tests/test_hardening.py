@@ -55,3 +55,12 @@ def test_backtest_reports_open_position_at_end_of_test():
     assert "max_drawdown" in metrics
     if not trades.empty:
         assert trades.iloc[-1]["reason"] in {"stop", "target", "signal", "end_of_test"}
+
+
+def test_backtest_supports_all_ui_timeframes():
+    from api.backtest import BACKTEST_TIMEFRAMES
+    assert BACKTEST_TIMEFRAMES == {
+        "1m", "3m", "5m", "15m", "30m",
+        "1h", "2h", "4h", "6h", "8h", "12h",
+        "1d", "3d", "1w", "1M",
+    }
