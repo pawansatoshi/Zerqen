@@ -38,7 +38,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
 </header>
 
 <nav class="nav">
-  <button class="navbtn active" data-view="overview">Overview</button><button class="navbtn" data-view="paper">Paper Demo</button><button class="navbtn" data-view="backtest">Backtest</button><button class="navbtn" data-view="markets">Markets</button><button class="navbtn" data-view="positions">Positions</button><button class="navbtn" data-view="orders">Orders</button><button class="navbtn" data-view="performance">Performance</button><button class="navbtn" data-view="ledger">Trade Ledger</button><button class="navbtn" data-view="compounding">Compounding</button><button class="navbtn" data-view="audit">Audit Log</button><button class="navbtn" data-view="connections">Connections</button>
+  <button class="navbtn active" data-view="overview">Overview</button><button class="navbtn" data-view="paper">Paper Demo</button><button class="navbtn" data-view="futures">Futures</button><button class="navbtn" data-view="backtest">Backtest</button><button class="navbtn" data-view="markets">Markets</button><button class="navbtn" data-view="positions">Positions</button><button class="navbtn" data-view="orders">Orders</button><button class="navbtn" data-view="performance">Performance</button><button class="navbtn" data-view="ledger">Trade Ledger</button><button class="navbtn" data-view="compounding">Compounding</button><button class="navbtn" data-view="audit">Audit Log</button><button class="navbtn" data-view="connections">Connections</button>
 </nav>
 
 <main>
@@ -181,6 +181,14 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
   <div class="section"><div class="section-head"><div><h2>Paper positions</h2><p>Authoritative server-side positions marked against real public prices</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg entry</th><th>Fees</th><th>Realized P&L</th></tr></thead><tbody id="paperPositions"><tr><td colspan="6" class="empty">No paper positions.</td></tr></tbody></table></div></div></div>
   <div class="section"><div class="section-head"><div><h2>Paper orders</h2><p>Durable order lifecycle</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Fill</th><th>Status</th><th>Strategy</th></tr></thead><tbody id="paperOrders"><tr><td colspan="7" class="empty">No paper orders.</td></tr></tbody></table></div></div></div>
   <div class="section"><div class="section-head"><div><h2>Decision log</h2><p>Why Zerqen traded—or refused to trade</p></div></div><div class="card table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Time</th><th>Event</th><th>Evidence</th></tr></thead><tbody id="paperEvents"><tr><td colspan="3" class="empty">No paper events.</td></tr></tbody></table></div></div></div>
+</section>
+<section id="futures" class="view">
+  <div class="section-head"><div><h2>Futures Autonomous Terminal</h2><p>Paper-only autonomous futures research, isolated risk, compounding baseline and professional multi-timeframe chart.</p></div><div><span class="badge">PAPER · LIVE ORDERS OFF</span></div></div>
+  <div id="futuresChartHost"></div>
+  <div class="section"><div class="section-head"><div><h2>Futures Ledger</h2><p>Independent futures accounting. Spot equity, P&amp;L and compounding history are never mixed into this ledger.</p></div><button class="secondary" onclick="loadFuturesLedger()">Refresh ledger</button></div>
+    <div class="ledger-summary" id="futuresLedgerSummary"></div>
+    <div class="card ledger-scroll"><table class="table ledger-table"><thead><tr><th>Time</th><th>Event</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit / Mark</th><th>Realized P&amp;L</th><th>AI</th><th>Reason</th></tr></thead><tbody id="futuresLedgerRows"><tr><td colspan="9" class="empty">No futures events.</td></tr></tbody></table></div>
+  </div>
 </section>
 <section id="backtest" class="view">
   <div class="section-head"><div><h2>Historical Backtest</h2><p>Deterministic candle replay for SPOT and FUTURES. No real orders, no exchange credentials.</p></div><div><span class="badge">RESEARCH ONLY</span></div></div>
@@ -832,7 +840,17 @@ setInterval(loadMarket,30000);
 setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(futuresRefresh,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);setInterval(refreshAutonomousStatus,15000);refreshAIStatus();refreshMarketIntelligence();refreshAutonomousStatus();
 setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
 
+async function loadFuturesLedger(){
+  try{
+    const r=await api("/api/futures-ledger",{cache:"no-store"}),d=await r.json();
+    if(!d.ok||!d.initialized){$("futuresLedgerRows").innerHTML='<tr><td colspan="9" class="empty">Futures paper account not initialized.</td></tr>';return}
+    const a=d.account||{},cards=[["Day start",a.day_start_equity],["Current equity",a.current_equity],["Daily target",a.daily_target],["Daily P&L",a.daily_pnl],["Realized P&L",a.realized_pnl],["Fees",a.fees],["Funding",a.funding],["Drawdown",Number(a.drawdown||0)*100,"pct"]];
+    $("futuresLedgerSummary").innerHTML=cards.map(x=>"<div class='card metric'><label>"+x[0]+"</label><strong>"+(x[2]==="pct"?fmt(x[1],2)+"%":"$"+fmt(x[1]))+"</strong></div>").join("");
+    $("futuresLedgerRows").innerHTML=(d.events||[]).map(e=>{const p=e.payload||{};return "<tr><td>"+new Date(e.created_at).toLocaleString()+"</td><td>"+esc(e.type)+"</td><td>"+esc(p.symbol||"—")+"</td><td>"+esc(String(p.side||"—").toUpperCase())+"</td><td>"+(p.entry_price?"$"+fmt(p.entry_price):"—")+"</td><td>"+(p.mark_price?"$"+fmt(p.mark_price):"—")+"</td><td class='"+(Number(p.realized_pnl||0)>=0?"positive":"negative")+"'>"+(p.realized_pnl!=null?money(p.realized_pnl):"—")+"</td><td>"+(p.ai_confidence!=null?fmt(Number(p.ai_confidence)*100,0)+"%":"—")+"</td><td>"+esc(p.reason||p.detail||"—")+"</td></tr>"}).join("")||'<tr><td colspan="9" class="empty">No futures events.</td></tr>';
+  }catch(_){$("futuresLedgerRows").innerHTML='<tr><td colspan="9" class="empty">Futures ledger unavailable.</td></tr>'}
+}
 </script>
+<script src="/static/zerqen-futures-chart.js"></script>
 <!-- demo/real execution controls bundled with guarded paper backend -->
 </body>
 </html>
