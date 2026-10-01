@@ -225,14 +225,14 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
     <div class="form">
       <label>Market</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px">
         <select id="btMarket"><option value="spot">SPOT</option><option value="futures">FUTURES DEMO</option></select>
-        <input id="btSymbol" value="BTC/USDT" placeholder="BTC/USDT">
-        <select id="btTimeframe"><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="1w">1W</option></select>
+        <select id="btSymbol" aria-label="Backtest asset">          <option value="BTC/USDT">BTC/USDT</option><option value="ETH/USDT">ETH/USDT</option><option value="SOL/USDT">SOL/USDT</option><option value="BNB/USDT">BNB/USDT</option><option value="XRP/USDT">XRP/USDT</option><option value="DOGE/USDT">DOGE/USDT</option><option value="ADA/USDT">ADA/USDT</option><option value="AVAX/USDT">AVAX/USDT</option><option value="LINK/USDT">LINK/USDT</option><option value="DOT/USDT">DOT/USDT</option><option value="SUI/USDT">SUI/USDT</option><option value="TRX/USDT">TRX/USDT</option><option value="LTC/USDT">LTC/USDT</option><option value="BCH/USDT">BCH/USDT</option><option value="UNI/USDT">UNI/USDT</option><option value="AAVE/USDT">AAVE/USDT</option><option value="NEAR/USDT">NEAR/USDT</option><option value="ARB/USDT">ARB/USDT</option><option value="OP/USDT">OP/USDT</option><option value="PEPE/USDT">PEPE/USDT</option>        </select>
+        <select id="btTimeframe" aria-label="Backtest timeframe">          <option value="1m">1M</option><option value="3m">3M</option><option value="5m">5M</option><option value="15m">15M</option><option value="30m">30M</option><option value="1h" selected>1H</option><option value="2h">2H</option><option value="4h">4H</option><option value="6h">6H</option><option value="8h">8H</option><option value="12h">12H</option><option value="1d">1D</option><option value="3d">3D</option><option value="1w">1W</option><option value="1M">1MO</option>        </select>
         <select id="btLeverage"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="5">5x</option></select>
         <input id="btCapital" type="number" min="1" step="0.01" value="10000" placeholder="Starting capital">
       </div>
-      <div class="section-note">Spot runs unleveraged. Futures uses isolated-style simulated margin, liquidation protection, funding assumption, fees and slippage. Historical results are not forecasts.</div>
+      <div class="section-note">Assets: BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, DOT, SUI, TRX, LTC, BCH, UNI, AAVE, NEAR, ARB, OP and PEPE. Timeframes: 1m through 1M. Spot runs unleveraged. Futures uses isolated-style simulated margin, liquidation protection, funding assumption, fees and slippage. Historical results are not forecasts.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="primary" onclick="runBacktest()">Run backtest</button><button class="secondary" onclick="compareBacktests()">Compare SPOT vs FUTURES</button></div>
-      <div id="btMessage" class="note">Ready. Use up to 1,000 historical candles per run.</div>
+      <div id="btMessage" class="note">Ready. Choose any supported asset and timeframe. Up to 1,000 historical candles per run.</div>
     </div>
   </div>
   <div class="hero" style="margin-top:16px">
