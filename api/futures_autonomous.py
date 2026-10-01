@@ -74,8 +74,8 @@ def cycle(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=N
         context=report_for_ai(report)
         context.update({"symbol":symbol,"timeframe":"1h","signal":c["side"],"scanner":c,
                  "portfolio":{"equity":str(eq),"daily_pnl":str(daily),"drawdown":str(dd),"gross_exposure":str(gross),"open_positions":len(_positions(conn))},
-                 "futures":{"leverage":str(leverage),"risk_amount":str(risk.risk_amount),"stop":str(risk.stop_price),"target":str(risk.target_price),"liquidation":str(risk.liquidation_price)}})
-        context["futures"]["report_hash"]=report.report_hash
+                 "futures_execution":{"leverage":str(leverage),"risk_amount":str(risk.risk_amount),"stop":str(risk.stop_price),"target":str(risk.target_price),"liquidation":str(risk.liquidation_price)}})
+        context["futures_execution"]["report_hash"]=report.report_hash
         try:
             ai=evaluate_setup(context)
         except FreeOnlyViolation as exc:
