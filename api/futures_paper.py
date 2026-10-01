@@ -118,8 +118,12 @@ def _rollover_day(conn):
     if row[0] != today:
         # Equity is recomputed before rollover so the next trading day compounds
         # from actual account equity, including open-position unrealized P&L.
-        values=_equity(conn)
-        current=D(str(values[0])) if values else D(str(row[1]))
+        cash=D(str(conn.execute("SELECT cash FROM zerqen_futures_paper_state WHERE account_id='default'").fetchone()[0]))
+        current=cash
+        for pos in _positions(conn):
+            mark,_=_mark_price(str(pos[1]))
+            m=mark_position(D(str(pos[4])),mark,D(str(pos[3])),str(pos[2]),D(str(pos[6])),D(str(pos[5])))
+            current += D(str(pos[6])) + m.unrealized_pnl
         conn.execute("UPDATE zerqen_futures_paper_state SET day_start_date=%s,day_start_equity=%s,daily_target=%s,daily_target_hit=FALSE,updated_at=%s WHERE account_id='default'",
                      (today,current,current*D("1.08"),_now()))
         _event(conn,"FUTURES_DAY_ROLLOVER",{"day_start_equity":str(current),"daily_target":str(current*D("1.08")),"date":str(today)})
