@@ -5,15 +5,20 @@ from datetime import datetime, timezone
 
 RUN_INTERVAL_SECONDS = int(os.getenv("ZERQEN_DEMO_INTERVAL_SECONDS", "60"))
 
-# Vercel/Fluid Compute may reuse a warm Python instance. Avoid running schema DDL
-# on every worker request: DDL can contend with concurrent Postgres traffic and
-# is unnecessary once this process has initialized the worker table.
+# The worker status endpoint must stay lightweight. Do not reuse api._paper.db()
+# here: that helper performs the complete paper-ledger schema bootstrap (many
+# CREATE/ALTER TABLE statements) on every connection. A worker heartbeat only
+# needs one small table and one short-lived transaction.
 _SCHEMA_READY = False
 
 
 def _db():
-    from api._paper import db
-    return db()
+    import psycopg
+
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError("database unavailable")
+    return psycopg.connect(url, connect_timeout=8)
 
 
 def _ensure_schema_once(conn):
@@ -43,7 +48,7 @@ def _ensure_schema_once(conn):
 
 
 def ensure_schema(conn):
-    # Kept as a small compatibility wrapper for callers/tests.
+    # Compatibility wrapper for existing callers/tests.
     _ensure_schema_once(conn)
 
 
@@ -75,9 +80,6 @@ def worker_status():
 
 
 def heartbeat():
-    # One connection + one schema bootstrap + one UPDATE + one SELECT.
-    # Do not call worker_status() here: the previous implementation opened a
-    # second DB connection and repeated schema DDL on every heartbeat.
     with _db() as conn:
         _ensure_schema_once(conn)
         now = datetime.now(timezone.utc)
