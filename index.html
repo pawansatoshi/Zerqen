@@ -152,8 +152,8 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
       <label>Demo currency</label><select id="paperCurrency"><option value="USD">USD · $</option><option value="INR">INR · ₹</option></select>
       <label>Paper starting capital</label><input id="paperCapital" type="number" min="1" step="0.01" placeholder="Enter starting capital">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="primary" onclick="paperInitialize()">Start autonomous demo</button>
-        <button class="secondary" id="autoDemoBtn" onclick="paperToggleAuto()">Autonomous worker</button>
+        <button class="primary" onclick="paperInitialize()">Initialize Spot paper</button>
+        <button class="secondary" id="autoDemoBtn" onclick="startMarketAutonomous('spot')">START SPOT AUTONOMOUS</button>
         <button class="secondary" onclick="paperResume()">Resume demo</button>
         <button class="secondary" onclick="paperPause()">Pause demo</button>
         <button class="secondary" onclick="paperCycle()">Run one market cycle</button>
@@ -183,8 +183,8 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
         </div>
         <label>Starting capital</label><input id="futCapital" type="number" min="1" step="0.01" value="1000">
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="primary" onclick="futuresInitialize()">Initialize $1,000 futures paper</button>
-          <button class="secondary" onclick="futuresOpen()">Open paper position</button>
+          <button class="primary" onclick="futuresInitialize()">Initialize Futures paper</button>
+          <button class="primary" onclick="startMarketAutonomous('futures')">START FUTURES AUTONOMOUS</button><button class="secondary" onclick="futuresOpen()">Manual paper position</button>
           <button class="secondary" onclick="futuresMark()">Mark / manage exits</button>
           <button class="secondary" onclick="futuresFunding()">Settle funding</button>
           <button class="secondary" onclick="futuresRefresh()">Refresh</button>
@@ -719,7 +719,7 @@ async function paperCycle(){
   await loadLedger();
   if(!d.ok && d.error) $("paperMessage").textContent=d.error;
 }
-async function paperToggleAuto(){
+async function legacyPaperToggleAuto(){
   const action=autoDemoTimer?"stop":"start";
   if(action==="start" && !$("paperCapital").value && !$("paperEquity").textContent.includes("$") && !$("paperEquity").textContent.includes("₹")){toast("Initialize demo first");return}
   if(!requireDashboardAccess())return;
