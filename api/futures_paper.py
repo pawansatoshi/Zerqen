@@ -93,6 +93,12 @@ def _db():
         )
         """
     )
+    # Keep the Futures compounding fields available even when the latest migration
+    # has not yet been applied by the deployment bootstrap.
+    conn.execute("ALTER TABLE zerqen_futures_paper_state ADD COLUMN IF NOT EXISTS day_start_date DATE")
+    conn.execute("ALTER TABLE zerqen_futures_paper_state ADD COLUMN IF NOT EXISTS daily_target NUMERIC")
+    conn.execute("ALTER TABLE zerqen_futures_paper_state ADD COLUMN IF NOT EXISTS daily_target_hit BOOLEAN NOT NULL DEFAULT FALSE")
+    conn.execute("UPDATE zerqen_futures_paper_state SET day_start_date=COALESCE(day_start_date,CURRENT_DATE), daily_target=COALESCE(daily_target,day_start_equity*1.08) WHERE account_id='default'")
     conn.commit()
     return conn
 
@@ -104,9 +110,29 @@ def _event(conn, event_type: str, payload: dict):
     )
 
 
+def _rollover_day(conn):
+    row=conn.execute("SELECT day_start_date,day_start_equity,daily_target,daily_target_hit FROM zerqen_futures_paper_state WHERE account_id='default'").fetchone()
+    if not row:
+        return
+    today=datetime.now(timezone.utc).date()
+    if row[0] != today:
+        # Equity is recomputed before rollover so the next trading day compounds
+        # from actual account equity, including open-position unrealized P&L.
+        cash=D(str(conn.execute("SELECT cash FROM zerqen_futures_paper_state WHERE account_id='default'").fetchone()[0]))
+        current=cash
+        for pos in _positions(conn):
+            mark,_=_mark_price(str(pos[1]))
+            m=mark_position(D(str(pos[4])),mark,D(str(pos[3])),str(pos[2]),D(str(pos[6])),D(str(pos[5])))
+            current += D(str(pos[6])) + m.unrealized_pnl
+        conn.execute("UPDATE zerqen_futures_paper_state SET day_start_date=%s,day_start_equity=%s,daily_target=%s,daily_target_hit=FALSE,updated_at=%s WHERE account_id='default'",
+                     (today,current,current*D("1.08"),_now()))
+        _event(conn,"FUTURES_DAY_ROLLOVER",{"day_start_equity":str(current),"daily_target":str(current*D("1.08")),"date":str(today)})
+        conn.commit()
+
 def _state(conn):
+    _rollover_day(conn)
     return conn.execute(
-        "SELECT account_id,starting_equity,cash,realized_pnl,fees,funding,slippage,peak_equity,day_start_equity,halted,updated_at FROM zerqen_futures_paper_state WHERE account_id='default'"
+        "SELECT account_id,starting_equity,cash,realized_pnl,fees,funding,slippage,peak_equity,day_start_equity,halted,updated_at,day_start_date,daily_target,daily_target_hit FROM zerqen_futures_paper_state WHERE account_id='default'"
     ).fetchone()
 
 
@@ -181,6 +207,11 @@ def _payload(conn):
     events = conn.execute(
         "SELECT event_type,payload,created_at FROM zerqen_futures_paper_events WHERE account_id='default' ORDER BY created_at DESC LIMIT 30"
     ).fetchall()
+    target_hit=bool(state[13]) or eq >= D(str(state[12]))
+    if target_hit and not bool(state[13]):
+        conn.execute("UPDATE zerqen_futures_paper_state SET daily_target_hit=TRUE,updated_at=%s WHERE account_id='default'",(_now(),))
+        _event(conn,"FUTURES_DAILY_TARGET_REACHED",{"equity":str(eq),"target":str(state[12])})
+        conn.commit()
     return {
         "ok": True,
         "initialized": True,
@@ -195,6 +226,9 @@ def _payload(conn):
         "funding": float(state[5]),
         "slippage": float(state[6]),
         "daily_pnl": float(daily),
+        "day_start_equity": float(state[8]),
+        "daily_target": float(state[12]),
+        "daily_target_hit": bool(target_hit),
         "drawdown": float(dd),
         "gross_exposure": float(gross),
         "halted": bool(state[9]),
@@ -322,6 +356,10 @@ def action(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=
                 state = _state(conn)
                 if state[9]:
                     raise HTTPException(409, "futures paper halt is active")
+                if bool(state[13]) or D(str(_equity(conn)[0])) >= D(str(state[12])):
+                    conn.execute("UPDATE zerqen_futures_paper_state SET daily_target_hit=TRUE,updated_at=%s WHERE account_id='default'",(_now(),))
+                    conn.commit()
+                    raise HTTPException(409, "daily 8% target reached; new futures entries are locked until next trading day")
                 symbol = str(payload.get("symbol", "BTC/USDT")).upper()
                 side = str(payload.get("side", "buy")).lower()
                 leverage = D(str(payload.get("leverage", "2")))

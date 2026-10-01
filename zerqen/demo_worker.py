@@ -93,6 +93,19 @@ def api_call(label: str, path: str, payload: dict | None = None) -> dict:
 def post_paper_cycle() -> dict:
     return api_call("paper_cycle", "/api/paper", {"action": "autonomous_cycle"})
 
+def post_futures_cycle() -> dict:
+    return api_call("futures_autonomous_cycle", "/api/futures-autonomous", {})
+def post_futures_mark() -> dict:
+    return api_call("futures_mark", "/api/futures-paper", {"action":"mark"})
+
+def autonomous_status() -> dict:
+    return api_call("autonomous_status", "/api/autonomous")
+def autonomous_action(action: str, market: str, **extra) -> dict:
+    payload={"action":action,"market":market};payload.update(extra)
+    return api_call("autonomous_"+market+"_"+action, "/api/autonomous", payload)
+def set_stage(market: str, stage: str, message: str, symbol: str | None = None) -> dict:
+    return autonomous_action("stage",market,stage=stage,message=message,symbol=symbol)
+
 
 def ensure_paper_initialized(cycle: dict) -> dict:
     """Initialize the default paper account once, then retry the cycle."""
@@ -164,116 +177,83 @@ def execute_approved_signal(cycle: dict) -> dict | None:
 
 
 def main() -> None:
-    # Dedicated worker services resume the persisted paper/autonomous scheduler on boot.
-    # This never enables live trading.
-    if os.getenv("ZERQEN_DEMO_WORKER_AUTO_START", "true").strip().lower() in {"1", "true", "yes", "on"}:
-        boot = api_call("worker_auto_start", "/api/demo-worker", {"action": "start"})
-        print(
-            datetime.now(timezone.utc).isoformat(),
-            "worker auto-start",
-            json.dumps(boot, default=str)[:2500],
-            flush=True,
-        )
+    if os.getenv("ZERQEN_DEMO_WORKER_AUTO_START", "true").strip().lower() in {"1","true","yes","on"}:
+        boot=api_call("worker_auto_start","/api/demo-worker",{"action":"start"})
+        print(datetime.now(timezone.utc).isoformat(),"worker auto-start",json.dumps(boot,default=str)[:2500],flush=True)
 
     print(
         f"zerqen demo worker started at {datetime.now(timezone.utc).isoformat()} "
         f"interval={INTERVAL}s timeout={HTTP_TIMEOUT}s diagnostics={DIAGNOSTICS} "
-        f"diagnostic_only={DIAGNOSTIC_ONLY} base={BASE_URL}",
-        flush=True,
-    )
+        f"diagnostic_only={DIAGNOSTIC_ONLY} base={BASE_URL}",flush=True)
 
     while True:
-        started = time.monotonic()
+        started=time.monotonic()
         try:
-            stages: dict[str, dict] = {}
-
+            stages={}
             if DIAGNOSTICS:
-                stages["health"] = api_call("health", "/api/health")
-                print(
-                    datetime.now(timezone.utc).isoformat(),
-                    "probe health",
-                    json.dumps(stages["health"], default=str)[:1800],
-                    flush=True,
-                )
-
-            stages["status"] = api_call("demo_worker_get", "/api/demo-worker")
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                "probe demo-worker GET",
-                json.dumps(stages["status"], default=str)[:1800],
-                flush=True,
-            )
+                stages["health"]=api_call("health","/api/health")
+            stages["status"]=api_call("demo_worker_get","/api/demo-worker")
+            stages["autonomous"]=autonomous_status()
 
             if stages["status"].get("transport_error"):
-                print(
-                    datetime.now(timezone.utc).isoformat(),
-                    "probe failed at demo_worker_get",
-                    json.dumps(stages["status"], default=str),
-                    flush=True,
-                )
+                print(datetime.now(timezone.utc).isoformat(),"worker transport failure",json.dumps(stages["status"],default=str),flush=True)
                 continue
 
-            if not stages["status"].get("enabled"):
-                print(
-                    datetime.now(timezone.utc).isoformat(),
-                    "demo worker disabled",
-                    flush=True,
-                )
+            engines={e["market"]:e for e in (stages["autonomous"].get("engines") or [])}
+            spot=engines.get("spot",{})
+            futures=engines.get("futures",{})
+
+            if not spot.get("enabled") and not futures.get("enabled") and not spot.get("stop_requested") and not futures.get("stop_requested"):
+                print(datetime.now(timezone.utc).isoformat(),"all autonomous engines disabled",flush=True)
                 continue
 
-            stages["heartbeat"] = api_call(
-                "demo_worker_heartbeat",
-                "/api/demo-worker",
-                {"action": "heartbeat"},
-            )
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                "probe demo-worker heartbeat",
-                json.dumps(stages["heartbeat"], default=str)[:1800],
-                flush=True,
-            )
-
+            stages["heartbeat"]=api_call("demo_worker_heartbeat","/api/demo-worker",{"action":"heartbeat"})
             if DIAGNOSTIC_ONLY:
-                print(
-                    datetime.now(timezone.utc).isoformat(),
-                    "diagnostic-only: skipping autonomous_cycle and execution",
-                    flush=True,
-                )
+                print(datetime.now(timezone.utc).isoformat(),"diagnostic-only: skipping autonomous execution",flush=True)
                 continue
 
-            stages["cycle"] = ensure_paper_initialized(post_paper_cycle())
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                "probe paper autonomous_cycle",
-                json.dumps(stages["cycle"], default=str)[:3500],
-                flush=True,
-            )
+            if spot.get("enabled") and not spot.get("stop_requested"):
+                set_stage("spot","SCANNING","Scanning Top-50 spot markets")
+                stages["spot_cycle"]=ensure_paper_initialized(post_paper_cycle())
+                set_stage("spot","AI_REVIEW","Filtering candidates and applying AI/risk gates")
+                stages["spot_execution"]=execute_approved_signal(stages["spot_cycle"])
+                result=stages["spot_execution"] or stages["spot_cycle"]
+                if result.get("trade"):
+                    set_stage("spot","IN_POSITION","Managing active Spot position",result.get("symbol"))
+                elif result.get("reason") in {"WAITING_FOR_SETUP","NO_SETUP","NO_VALID_SETUP"}:
+                    set_stage("spot","WAITING","No valid setup; waiting for confirmation")
+                else:
+                    set_stage("spot","MONITORING","Research cycle complete; monitoring for material change")
+            elif spot.get("stop_requested"):
+                set_stage("spot","MANAGING","Stop requested; protecting existing Spot positions")
+                stages["spot_cycle"]=post_paper_cycle()
+                if int(stages["spot_cycle"].get("positions_remaining",0) or 0)==0:
+                    stages["spot_finalize"]=autonomous_action("finalize_stop","spot")
 
-            stages["execution"] = execute_approved_signal(stages["cycle"])
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                "probe paper execution",
-                json.dumps(stages["execution"], default=str)[:1800],
-                flush=True,
-            )
+            if futures.get("enabled") and not futures.get("stop_requested"):
+                set_stage("futures","SCANNING","Scanning Top-50 futures candidates")
+                stages["futures_mark"]=post_futures_mark()
+                set_stage("futures","AI_REVIEW","Running multi-timeframe intelligence + AI review")
+                stages["futures_cycle"]=post_futures_cycle()
+                result=stages["futures_cycle"]
+                if result.get("trade"):
+                    set_stage("futures","IN_POSITION","Managing active Futures position",result.get("symbol"))
+                elif result.get("reason") in {"WAITING_FOR_SETUP","AI_HOLD_OR_REJECT","RISK_BLOCKED"}:
+                    set_stage("futures","WAITING","No valid setup; waiting for confirmation")
+                else:
+                    set_stage("futures","MONITORING","Research cycle complete; monitoring for material change")
+            elif futures.get("stop_requested"):
+                set_stage("futures","MANAGING","Stop requested; protecting existing Futures positions")
+                stages["futures_mark"]=post_futures_mark()
+                if not (stages["futures_mark"].get("positions") or []):
+                    stages["futures_finalize"]=autonomous_action("finalize_stop","futures")
 
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                "worker cycle complete",
-                json.dumps(stages, default=str)[:7000],
-                flush=True,
-            )
-        except Exception as exc:  # noqa: BLE001
-            print(
-                datetime.now(timezone.utc).isoformat(),
-                "worker_error_unexpected",
-                repr(exc),
-                flush=True,
-            )
+            print(datetime.now(timezone.utc).isoformat(),"worker cycle complete",json.dumps(stages,default=str)[:7000],flush=True)
+        except Exception as exc:
+            print(datetime.now(timezone.utc).isoformat(),"worker_error_unexpected",repr(exc),flush=True)
         finally:
-            elapsed = time.monotonic() - started
-            time.sleep(max(1, INTERVAL - elapsed))
+            elapsed=time.monotonic()-started
+            time.sleep(max(1,INTERVAL-elapsed))
 
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
