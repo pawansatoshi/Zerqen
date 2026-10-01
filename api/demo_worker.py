@@ -5,12 +5,6 @@ from datetime import datetime, timezone
 
 RUN_INTERVAL_SECONDS = int(os.getenv("ZERQEN_DEMO_INTERVAL_SECONDS", "60"))
 
-# The worker status endpoint must stay lightweight. Do not reuse api._paper.db()
-# here: that helper performs the complete paper-ledger schema bootstrap (many
-# CREATE/ALTER TABLE statements) on every connection. A worker heartbeat only
-# needs one small table and one short-lived transaction.
-_SCHEMA_READY = False
-
 
 def _db():
     import psycopg
@@ -22,10 +16,7 @@ def _db():
 
 
 def _ensure_schema_once(conn):
-    global _SCHEMA_READY
-    if _SCHEMA_READY:
-        return
-
+    """Explicit migration helper; never run on the hot request path."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS zerqen_demo_worker (
             worker_id TEXT PRIMARY KEY,
@@ -44,11 +35,10 @@ def _ensure_schema_once(conn):
         (RUN_INTERVAL_SECONDS, datetime.now(timezone.utc)),
     )
     conn.commit()
-    _SCHEMA_READY = True
 
 
 def ensure_schema(conn):
-    # Compatibility wrapper for existing callers/tests.
+    # Compatibility/migration helper for explicit callers and tests.
     _ensure_schema_once(conn)
 
 
@@ -67,21 +57,24 @@ def _status_from_row(row):
 
 def _read_status(conn):
     row = conn.execute(
-        """SELECT enabled,interval_seconds,heartbeat_at,last_cycle_at,last_error,updated_at
+        """SELECT enabled,interval_seconds,heartbeat_at,last_cycle_at,last_error
            FROM zerqen_demo_worker WHERE worker_id='default'"""
     ).fetchone()
+    if row is None:
+        raise RuntimeError("worker state is not initialized")
     return _status_from_row(row)
 
 
 def worker_status():
+    # No CREATE/ALTER/DDL on a serverless request. The table is provisioned
+    # separately; status is a single indexed-row SELECT.
     with _db() as conn:
-        _ensure_schema_once(conn)
         return _read_status(conn)
 
 
 def heartbeat():
+    # Keep the hot heartbeat path to one UPDATE + one SELECT transaction.
     with _db() as conn:
-        _ensure_schema_once(conn)
         now = datetime.now(timezone.utc)
         conn.execute(
             "UPDATE zerqen_demo_worker SET heartbeat_at=%s,updated_at=%s WHERE worker_id='default'",
@@ -93,7 +86,6 @@ def heartbeat():
 
 def set_enabled(enabled: bool):
     with _db() as conn:
-        _ensure_schema_once(conn)
         now = datetime.now(timezone.utc)
         conn.execute(
             "UPDATE zerqen_demo_worker SET enabled=%s,updated_at=%s WHERE worker_id='default'",
