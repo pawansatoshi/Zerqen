@@ -167,7 +167,7 @@ def run_autonomous_cycle(conn, state):
                 reviewed.append({"symbol":symbol,"side":side,"status":"RISK_BLOCKED","reason":"volatility"}); continue
             stop=dynamic_structural_stop(rows,side.lower(),price,atr)
             risk=size_for_risk(current_equity,price,atr,limits,side.lower(),stop)
-            if not risk.approved:
+            if not risk.allowed:
                 reviewed.append({"symbol":symbol,"side":side,"status":"RISK_BLOCKED","reason":risk.reason}); continue
             allowed,reason=check_portfolio_risk(current_equity,positions,risk,limits,daily_pnl,D(str(state[7])),
                                                 proposed_notional=risk.quantity*price)
@@ -226,10 +226,10 @@ def run_autonomous_cycle(conn, state):
         "ai_enabled":True,"ai_decision":ai_result.get("decision"),"ai_confidence":ai_result.get("confidence"),
         "ai_model":ai_result.get("model"),"ai_reason":ai_result.get("reason"),
         "ai_risk_flags":ai_result.get("risk_flags"),"ai_report_hash":report.report_hash,
-        "stop":str(risk.stop),"target":str(risk.target),"risk_amount":str(risk.risk_amount),"leverage_policy":leverage,"universe_researched":len(universe_research)})
+        "stop":str(risk.stop_price),"target":str(risk.target_price),"risk_amount":str(risk.risk_amount),"leverage_policy":leverage,"universe_researched":len(universe_research)})
     marks[c["symbol"]]=D(str(c["price"]))
     snapshot(conn,marks); conn.commit()
     return {"ok":True,"autonomous":True,"trade":True,"selected":{"symbol":c["symbol"],"side":c["side"],
-        "scanner_score":c["score"],"ai_confidence":ai_result.get("confidence"),"stop":str(risk.stop),
-        "target":str(risk.target),"risk_amount":str(risk.risk_amount),"report_hash":report.report_hash,"leverage":leverage["recommended"],"leverage_max":leverage["max"],"universe_researched":len(universe_research)},
+        "scanner_score":c["score"],"ai_confidence":ai_result.get("confidence"),"stop":str(risk.stop_price),
+        "target":str(risk.target_price),"risk_amount":str(risk.risk_amount),"report_hash":report.report_hash,"leverage":leverage["recommended"],"leverage_max":leverage["max"],"universe_researched":len(universe_research)},
         "reviewed":reviewed}
