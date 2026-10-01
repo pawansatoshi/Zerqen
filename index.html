@@ -937,12 +937,17 @@ async function refreshLiveTradeMonitor(state){
     $("spotLiveState").textContent=sp?"IN POSITION":(spot.stage||"IDLE");
     $("spotLivePrice").textContent=sp?("Entry $"+fmt(sp.average_entry)+" · P&L "+money(sp.unrealized_pnl||0)):(spot.stage_message||"No active Spot position");
     $("spotLiveLevels").innerHTML=sp?("<span class='entry'>ENTRY $"+fmt(sp.average_entry)+"</span><span class='stop'>MANAGED BY RISK ENGINE</span>"):"";
-    $("futuresLiveSymbol").textContent=fp?("FUTURES · "+fp[1]):"FUTURES · "+(fut.stage||"WAITING");
+    $("futuresLiveSymbol").textContent=fp?("FUTURES · "+fp.symbol):"FUTURES · "+(fut.stage||"WAITING");
     $("futuresLiveState").textContent=fp?"IN POSITION":(fut.stage||"IDLE");
-    $("futuresLivePrice").textContent=fp?("Entry $"+fmt(fp[4])+" · Leverage "+fmt(fp[5],1)+"x"):(fut.stage_message||"No active Futures position");
-    $("futuresLiveLevels").innerHTML=fp?("<span class='entry'>ENTRY $"+fmt(fp[4])+"</span><span class='stop'>STOP $"+fmt(fp[9])+"</span><span class='target'>TARGET $"+fmt(fp[10])+"</span>"):"";
-    if(fp&&window.loadOverviewFuturesChart)window.loadOverviewFuturesChart(fp[1]);
-    if(!sp)$("spotLiveChart").innerHTML="<div class='empty'>No active Spot position · research/status remains visible above.</div>";
+    $("futuresLivePrice").textContent=fp?("Entry $"+fmt(fp.entry_price)+" · Mark $"+fmt(fp.mark_price)+" · "+fmt(fp.leverage,1)+"x · uP&L "+money(fp.unrealized_pnl||0)):(fut.stage_message||"No active Futures position");
+    $("futuresLiveLevels").innerHTML=fp?("<span class='entry'>ENTRY $"+fmt(fp.entry_price)+"</span><span class='stop'>STOP $"+fmt(fp.stop_price)+"</span><span class='target'>TARGET $"+fmt(fp.target_price)+"</span><span>LIQ $"+fmt(fp.liquidation_price)+"</span>"):"";
+    if(fp&&window.loadOverviewFuturesChart)window.loadOverviewFuturesChart(fp.symbol);
+    if(sp){
+      try{
+        const sr=await fetch("/api/market?exchange=binance&symbol="+encodeURIComponent(sp.symbol)+"&timeframe=1h&limit=120",{cache:"no-store"}),sdata=await sr.json();
+        if(sr.ok&&sdata.ok&&sdata.closes?.length){$("spotLiveSymbol").textContent="SPOT · "+sp.symbol;$("spotLivePrice").textContent="Entry $"+fmt(sp.average_entry)+" · P&L "+money(sp.unrealized_pnl||0);renderCandles("spotLiveChart",sdata,buildSignals(sdata.closes));}
+      }catch(_){}
+    }else $("spotLiveChart").innerHTML="<div class='empty'>No active Spot position · research/status remains visible above.</div>";
   }catch(_){}
 }
 selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();futuresRefresh();connectMarketSocket();
