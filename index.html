@@ -332,7 +332,7 @@ function fillExchanges(){const s=$("exchange");if(!s)return;exchanges.forEach(([
 function token(){return $("token")?.value.trim()||sessionStorage.getItem("zerqen_token")||localStorage.getItem("zerqen_token")||""}
 function requireDashboardAccess(){if(token())return true;$("paperMessage").textContent="Dashboard access token required · open Connections → enter token → Verify dashboard token";openConnections();setTimeout(()=>{$("token")?.focus()},120);return false}
 async function api(path,options={}){const headers=Object.assign({},options.headers||{},{"x-zerqen-dashboard-token":token()});return fetch(path,Object.assign({},options,{headers}))}
-async async function saveDashboardToken(){
+async function saveDashboardToken(){
   const value=$("token").value.trim();
   const r=$("result");
   if(!value){r.textContent="Dashboard access token required";r.className="negative";return}
