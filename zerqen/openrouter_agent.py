@@ -84,14 +84,27 @@ def _http_json(method, url, payload=None):
         return json.loads(response.read().decode())
 
 def _extract_text(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('OpenRouter returned a non-object response')
     choices = payload.get('choices') or []
-    if not choices:
+    if not isinstance(choices, list) or not choices:
         raise ValueError('OpenRouter returned no choices')
-    content = (choices[0].get('message') or {}).get('content')
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise ValueError('OpenRouter returned an invalid choice object')
+    message = choice.get('message') or {}
+    if not isinstance(message, dict):
+        raise ValueError('OpenRouter returned an invalid message object')
+    content = message.get('content')
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return ''.join(str(p.get('text', '')) for p in content if isinstance(p, dict))
+        parts = []
+        for part in content:
+            if isinstance(part, dict) and isinstance(part.get('text'), str):
+                parts.append(part['text'])
+        if parts:
+            return ''.join(parts)
     raise ValueError('OpenRouter returned no text content')
 
 def _parse_decision(text):
@@ -129,7 +142,7 @@ def evaluate_setup(context):
             return {'enabled':True,**parsed,'model':model.model_id,'attempts':attempts}
         except FreeOnlyViolation:
             raise
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, TypeError, AttributeError, json.JSONDecodeError) as exc:
             REGISTRY.mark_failed(model.model_id); attempts.append({'model':model.model_id,'ok':False,'error':type(exc).__name__})
     return {'enabled':True,'decision':'HOLD','confidence':0.0,'reason':'No healthy verified-free OpenRouter model was available','risk_flags':['AI_FALLBACK_EXHAUSTED'],'invalidation':'','model':None,'attempts':attempts}
 
