@@ -378,7 +378,13 @@ The dashboard is primarily for:
 
 ---
 
-## 11. Known issues / hardening queue
+## 11. Recent backtest UI expansion — 2026-10-01
+
+The Historical Backtest UI was expanded from only `1h`, `4h`, `1d`, `1w` and a BTC default to the full Binance candle interval set exposed by the product: `1m`, `3m`, `5m`, `15m`, `30m`, `1h`, `2h`, `4h`, `6h`, `8h`, `12h`, `1d`, `3d`, `1w`, `1M`. The asset selector now exposes multiple major USDT pairs instead of presenting only BTC. The backend validates the expanded timeframe set and BASE/QUOTE symbol format.
+
+This is still a historical research replay: asset/timeframe availability depends on the upstream Binance public historical endpoint and the requested pair's listing/history. Up to 1,000 candles are currently requested per run.
+
+## 12. Known issues / hardening queue
 
 ### A. AI-cap short-circuit — OPEN
 
@@ -469,7 +475,8 @@ These fixes are historical context. Do not reintroduce the same classes of synta
 
 ## 14. Current next actions
 
-1. End-to-end test Spot Start after PR #31 deployment.
+1. Verify expanded backtest asset/timeframe UI against several spot and futures symbols/timeframes.
+2. End-to-end test Spot Start after PR #31 deployment.
 2. End-to-end test Futures Start independently.
 3. Verify worker state changes from disabled → enabled after Start.
 4. Verify stage/cycle/heartbeat updates in the dashboard.
