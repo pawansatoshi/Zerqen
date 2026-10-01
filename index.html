@@ -117,7 +117,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
         <button class="secondary" id="autoDemoBtn" onclick="paperToggleAuto()">Autonomous worker</button>
         <button class="secondary" onclick="paperResume()">Resume demo</button>
         <button class="secondary" onclick="paperPause()">Pause demo</button>
-        <button class="secondary" onclick="paperCycle()">Run one market cycle</button>
+        <button class="secondary" onclick="paperCycle()">Run one autonomous cycle</button>
         <button class="secondary" onclick="paperTestOrder()">Run execution test</button>
         <button class="secondary" onclick="paperHalt()">Halt new orders</button>
         <button class="secondary" onclick="paperFlatten()">Flatten paper positions</button><button class="secondary" onclick="paperReset()">Reset paper account</button>
@@ -547,19 +547,27 @@ async function takeScannerTrade(symbol,side,silent=false){
 async function paperInitialize(){const msgEl=$("paperMessage");const btn=document.querySelector("[onclick=\"paperInitialize()\"]");const capital=$("paperCapital").value.trim();displayCurrency=$("paperCurrency")?.value||"USD";loadFx();if(!capital){msgEl.textContent="Enter starting capital first.";return}if(!requireDashboardAccess())return;const cfg=paperConfig();if(!cfg.symbol){msgEl.textContent="Enter a paper symbol.";return}if(btn){btn.disabled=true;btn.textContent="Initializing demo…"}msgEl.textContent="Initializing $"+capital+" paper account…";try{const r=await paperApi("initialize",Object.assign({starting_capital:capital},cfg));const d=await r.json().catch(()=>({ok:false,error:"invalid server response"}));if(r.status===401){msgEl.textContent="Dashboard access token rejected · verify it in Connections";openConnections();setTimeout(()=>{$("token")?.focus()},120);return}renderPaper(d);await loadLedger();if(!d.ok){const message="Initialization failed: "+(d.error||("HTTP "+r.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ $"+capital+" initialized · starting autonomous Top-50 AI worker…";const wr=await api("/api/demo-worker",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start"})});const wd=await wr.json().catch(()=>({ok:false,error:"worker response unavailable"}));if(!wr.ok||!wd.ok){const message="Paper account initialized, but autonomous worker could not start: "+(wd.error||("HTTP "+wr.status));msgEl.textContent=message;toast(message);return}msgEl.textContent="✓ Autonomous demo RUNNING · Top-50 scan + market intelligence + AI + risk engine";toast("Autonomous demo started — mobile independent")}catch(e){const message="Initialization failed: "+(e.message||"network error");msgEl.textContent=message;toast(message)}finally{if(btn){btn.disabled=false;btn.textContent="Start demo session"}}}
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
-  const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
+  if(!requireDashboardAccess())return;
+  const r=await paperApi("autonomous_cycle");const d=await r.json();renderPaper(d);
   if(d.ok && d.initialized){
-    const decision=(d.events||[]).find(e=>e.type==="STRATEGY_DECISION" && e.payload?.risk_decision==="APPROVED");
-    const hasPosition=(d.positions||[]).some(p=>p.symbol===d.symbol);
-    if(decision && !hasPosition){
-      const er=await paperApi("test_order",{symbol:d.symbol,side:decision.payload?.signal_direction==="SELL"?"sell":"buy"});
+    if(d.trade && d.selected){
+      const s=d.selected;
+      $("paperMessage").textContent="AUTONOMOUS setup approved: "+s.symbol+" "+s.side+" · AI "+(Number(s.ai_confidence||0)*100).toFixed(0)+"% · stop "+s.stop+" · target "+s.target;
+      const er=await paperApi("test_order",{symbol:s.symbol,side:String(s.side).toLowerCase(),scanner_requested:true,autonomous_approved:true});
       const ed=await er.json();
       renderPaper(ed);
-      if(ed.ok){ $("paperMessage").textContent="DEMO execution filled from approved strategy signal"; playAlert(decision.payload?.signal_direction==="SELL"?"SELL":"BUY"); }
+      if(ed.ok){playAlert(s.side);toast("Autonomous paper trade filled · "+s.symbol)}
+      else if(ed.error){$("paperMessage").textContent="Setup approved but execution was rejected: "+ed.error}
+    }else{
+      const reason=d.reason||"NO_TRADE";
+      $("paperMessage").textContent="Autonomous research completed · "+reason;
+      toast("No autonomous trade this cycle");
     }
+  }else if(!d.ok && d.error){
+    $("paperMessage").textContent=d.error;
   }
   await loadLedger();
-  if(!d.ok && d.error) $("paperMessage").textContent=d.error;
+  await refreshAutonomousStatus();
 }
 async function paperToggleAuto(){
   const action=autoDemoTimer?"stop":"start";
