@@ -465,7 +465,7 @@ function setActiveTimeframe(tf){chartWindow=120;
 }
 document.querySelectorAll("[data-tf]").forEach(b=>b.addEventListener("click",()=>setActiveTimeframe(b.dataset.tf)));
 document.querySelectorAll(".period").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".period").forEach(x=>x.classList.remove("active"));b.classList.add("active");toast("Verified portfolio history will populate this period")}));
-async function refreshAll(){toast("Refreshing live data…");await Promise.all([loadMarket(),loadHealth(),loadConnections()]);lastRefresh=Date.now();toast("Dashboard refreshed")}
+async function refreshAll(){toast("Refreshing live data…");await Promise.all([loadMarket(),loadHealth(),loadConnections(),futuresRefresh()]);lastRefresh=Date.now();toast("Dashboard refreshed")}
 async function runBacktestFor(market){
   const symbol=($("btSymbol").value||"BTC/USDT").trim().toUpperCase();
   const timeframe=$("btTimeframe").value;
@@ -776,10 +776,10 @@ async function openTradeDetail(id){
 }
 function closeTradeDetail(){$("tradeDrawer").classList.remove("open")}
 async function exportLedger(format){if(!token()){toast("Dashboard token required");return}try{const res=await api("/api/ledger/export?format="+format+"&"+ledgerParams().toString(),{cache:"no-store"});if(!res.ok){const d=await res.json();toast(d.error||"Export failed");return}const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=format==="xlsx"?"zerqen-trade-ledger.xlsx":"zerqen-trade-ledger.csv";a.click();URL.revokeObjectURL(url);toast("Authoritative ledger exported")}catch(_){toast("Export failed")}}
-selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
+selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();futuresRefresh();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
 setInterval(loadMarket,30000);
-setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);setInterval(refreshAutonomousStatus,15000);refreshAIStatus();refreshMarketIntelligence();refreshAutonomousStatus();
+setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(futuresRefresh,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);setInterval(refreshAutonomousStatus,15000);refreshAIStatus();refreshMarketIntelligence();refreshAutonomousStatus();
 setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
 
 </script>
