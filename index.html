@@ -467,7 +467,7 @@ async function loadHealth(){
     $("healthApi").textContent="OFFLINE";$("healthDb").textContent="UNKNOWN";$("healthPaper").textContent="BLOCKED";
   }
 }
-async function loadMarket(){
+async async function loadMarket(){
   const tf=currentTimeframe;
   try{
     const symbol=chartSymbol(); const wsSymbol=symbol.replace("/","").toLowerCase(); if(activeMarketWsSymbol!==wsSymbol) connectMarketSocket(symbol); const res=await fetch("/api/market?exchange=binance&symbol="+encodeURIComponent(symbol)+"&timeframe="+encodeURIComponent(tf)+"&limit="+chartWindow,{cache:"no-store"});
