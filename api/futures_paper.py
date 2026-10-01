@@ -323,10 +323,14 @@ def action(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=
                 side = str(payload.get("side", "buy")).lower()
                 leverage = D(str(payload.get("leverage", "2")))
                 stop = payload.get("stop_price")
+                stop_distance_pct = payload.get("stop_distance_pct")
                 target = payload.get("target_price")
-                if stop is None:
-                    raise HTTPException(400, "stop_price is required")
                 entry, _ = _mark_price(symbol)
+                if stop is None and stop_distance_pct is None:
+                    raise HTTPException(400, "stop_price or stop_distance_pct is required")
+                if stop is None:
+                    distance = entry * D(str(stop_distance_pct))
+                    stop = entry - distance if side == "buy" else entry + distance
                 if target is None:
                     distance = abs(entry - D(str(stop)))
                     target = entry + distance * D("2") if side == "buy" else entry - distance * D("2")
