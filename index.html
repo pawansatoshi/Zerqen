@@ -84,6 +84,16 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
     </div>
     <div id="marketIntelGrid" class="note" style="margin-top:12px">One normalized report will combine 1h/4h/1d indicators, structure, volatility, futures/options context and candidate setups.</div>
   </div>
+  <div class="card small-card" style="margin-bottom:16px">
+    <div class="small-title">AUTONOMOUS RESEARCH STATUS</div>
+    <div id="autoResearchState" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:10px"><strong id="autoResearchBadge">CHECKING</strong><span id="autoResearchLifecycle" class="section-note">Loading autonomous lifecycle…</span></div>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px">
+      <div class="statbox"><label>Universe</label><strong id="autoUniverse">50</strong></div><div class="statbox"><label>Scanned</label><strong id="autoScanned">—</strong></div><div class="statbox"><label>AI reviewed today</label><strong id="autoAIReviewed">0/40</strong></div><div class="statbox"><label>Approved setups</label><strong id="autoApproved">0</strong></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px"><div class="note"><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">Current setup</div><div id="autoCurrentSetup">No approved setup</div></div><div class="note"><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">Research outcome</div><div id="autoResearchOutcome">Waiting for first autonomous scan.</div></div></div>
+    <div style="margin-top:12px"><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">Rejected / held candidates</div><div id="autoRejectedCandidates" class="section-note">No decisions yet.</div></div>
+    <div id="autoResearchMeta" class="section-note" style="margin-top:10px">Worker heartbeat: — · Last scan: —</div>
+  </div>
   <div class="card small-card" style="margin-bottom:16px"><div class="small-title">Execution mode</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
     <button id="demoModeBtn" class="primary" onclick="selectExecutionMode('demo')">DEMO · PAPER</button>
     <button id="realModeBtn" class="secondary" onclick="selectExecutionMode('real')">REAL · LOCKED</button>
@@ -596,38 +606,46 @@ async function refreshAIStatus(){
     const b=$("aiStatusBadge"),t=$("aiStatusText");if(b)b.textContent="AI UNKNOWN";if(t)t.textContent="AI status unavailable; no AI-authorized entry is permitted."
   }
 }
-async function refreshMarketIntelligence(){
-  const grid=$("marketIntelGrid"),badge=$("aiRuntimeBadge");
-  if(!grid)return;
+async function refreshAutonomousStatus(){
+  const badge=$("autoResearchBadge"),life=$("autoResearchLifecycle"),scannedEl=$("autoScanned"),aiEl=$("autoAIReviewed"),approvedEl=$("autoApproved");if(!badge)return;
   try{
-    const rawSymbol=($("paperSymbol")?.value||"BTC/USDT").trim().toUpperCase();const symbol=rawSymbol.startsWith("AUTO/")?"BTC/USDT":rawSymbol;
-    const r=await api("/api/market-intelligence?symbol="+encodeURIComponent(symbol)+"&exchange=binance",{cache:"no-store"});
-    const d=await r.json();
-    if(!d.ok)throw new Error(d.error||"report unavailable");
-    const x=d.report||{}, one=x.timeframes?.["1h"]||{}, four=x.timeframes?.["4h"]||{}, day=x.timeframes?.["1d"]||{};
-    const der=x.derivatives||{},opt=x.options||{},risk=x.risk||{};
-    grid.innerHTML=[
-      ["regime",x.market_structure?.regime||"—"],
-      ["1h rsi",one.rsi14==null?"—":Number(one.rsi14).toFixed(1)],
-      ["4h trend",four.ema9&&four.ema21?(four.ema9>four.ema21?"bullish":"bearish"):"—"],
-      ["1d trend",day.ema9&&day.ema21?(day.ema9>day.ema21?"bullish":"bearish"):"—"],
-      ["atr",one.atr_pct==null?"—":(Number(one.atr_pct)*100).toFixed(2)+"%"],
-      ["volume",one.volume_ratio==null?"—":Number(one.volume_ratio).toFixed(2)+"x"],
-      ["funding",der.funding_rate==null?"unavailable":der.funding_rate],
-      ["open interest",der.open_interest==null?"unavailable":der.open_interest],
-      ["futures expiry",der.expiry_risk||"unavailable"],
-      ["options expiry",opt.nearest_expiry||"unavailable"],
-      ["setup",x.setup_candidates?.[0]?.name||"NO TRADE"],
-      ["risk gate",risk.volatility_ok?"PASS":"BLOCK"]
-    ].map(([k,v])=>"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.12)'><span>"+k+"</span><strong>"+v+"</strong></div>").join("");
+    const workerRes=await fetch("/api/demo-worker",{headers:{"x-zerqen-dashboard-token":token()},cache:"no-store"}),worker=await workerRes.json().catch(()=>({}));
+    const paperRes=await api("/api/paper",{method:"GET"}),d=await paperRes.json().catch(()=>({}));
+    const events=(d.events||[]).slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    const scan=events.find(e=>e.type==="AUTONOMOUS_MARKET_SCAN"),reviews=events.filter(e=>e.type==="AUTONOMOUS_AI_REVIEW");
+    const approvedEvents=events.filter(e=>e.type==="STRATEGY_DECISION"&&e.payload?.risk_decision==="APPROVED"&&e.payload?.strategy==="autonomous_top50_ai");
+    const latestReview=reviews[0],latestApproved=events.find(e=>e.type==="AUTONOMOUS_AI_REVIEW"&&e.payload?.status==="APPROVED");
+    const todayKey=new Date().toLocaleDateString(),aiToday=reviews.filter(e=>new Date(e.created_at).toLocaleDateString()===todayKey&&!["AI_COOLDOWN","AI_DAILY_CAP"].includes(String(e.payload?.status||""))).length;
+    const cap=Number(worker?.ai_daily_cap||40),hb=worker?.last_heartbeat?new Date(worker.last_heartbeat):null,interval=Number(worker?.interval_seconds||60);
+    const heartbeatFresh=hb&&(Date.now()-hb.getTime())<=Math.max(90000,interval*2500),running=Boolean(worker?.enabled&&heartbeatFresh);
+    badge.textContent=running?"RUNNING":worker?.enabled?"STALE / OFFLINE":"OFFLINE";badge.style.color=running?"var(--green)":"var(--amber)";
+    life.textContent=running?"worker heartbeat "+hb.toLocaleTimeString():"autonomous worker is not reporting";
+    if(scannedEl)scannedEl.textContent=scan?.payload?.scanned??"—";if(aiEl)aiEl.textContent=aiToday+"/"+cap;if(approvedEl)approvedEl.textContent=approvedEvents.length;
+    const setup=latestApproved?.payload||latestReview?.payload||{};$("autoCurrentSetup").textContent=setup.symbol?setup.symbol+" · "+(setup.side||setup.signal_direction||"—")+" · confidence "+(setup.ai_confidence==null?"—":(Number(setup.ai_confidence)*100).toFixed(0)+"%"):"No approved setup";
+    const reviewed=Array.isArray(latestReview?.payload?.reviewed)?latestReview.payload.reviewed:[],held=reviewed.filter(x=>x.status!=="AI_REVIEWED").slice(0,6);
+    $("autoRejectedCandidates").textContent=held.length?held.map(x=>x.symbol+" — "+(x.reason||x.status||"held")).join(" · "):"No rejected candidates in the latest AI review.";
+    let outcome="Waiting for first autonomous scan.";
+    if(latestReview){const rs=String(latestReview.payload?.status||"").toUpperCase();outcome=rs==="APPROVED"?"AI approved setup after deterministic risk gates.":rs==="NO_TRADE"?"No candidate passed deterministic risk gates and AI confirmation.":rs==="AI_COOLDOWN"?"Same setup is in AI cooldown; waiting for material change.":rs==="AI_DAILY_CAP"?"AI daily safety cap reached; no further autonomous reviews today.":rs==="AI_BLOCKED"?"AI free-only safety gate blocked review.":"Latest autonomous review: "+rs;}
+    else if(scan)outcome=String(scan.payload?.usable_candidates??0)+" candidates eligible after quantitative Top-50 scan.";
+    $("autoResearchOutcome").textContent=outcome;
+    const lastScan=scan?.created_at?new Date(scan.created_at).toLocaleTimeString():"—";$("autoResearchMeta").textContent="Worker heartbeat: "+(hb?hb.toLocaleTimeString():"—")+" · Last scan: "+lastScan+" · Universe: "+(scan?.payload?.scanned??50);
+  }catch(e){badge.textContent="UNKNOWN";badge.style.color="var(--amber)";life.textContent="autonomous observability unavailable";}
+}
+
+async function refreshMarketIntelligence(){
+  const grid=$("marketIntelGrid"),badge=$("aiRuntimeBadge");if(!grid)return;
+  try{
+    const rawSymbol=($("paperSymbol")?.value||"BTC/USDT").trim().toUpperCase(),symbol=rawSymbol.startsWith("AUTO/")?"BTC/USDT":rawSymbol;
+    const r=await api("/api/market-intelligence?symbol="+encodeURIComponent(symbol)+"&exchange=binance",{cache:"no-store"}),d=await r.json();if(!d.ok)throw new Error(d.error||"report unavailable");
+    const x=d.report||{},one=x.timeframes?.["1h"]||{},four=x.timeframes?.["4h"]||{},day=x.timeframes?.["1d"]||{},der=x.derivatives||{},opt=x.options||{},risk=x.risk||{},structure=x.market_structure||{},sets=x.setup_candidates||[];
+    const ema=tf=>tf&&tf.ema9&&tf.ema21?(tf.ema9>tf.ema21?"bullish":"bearish"):"—",val=(v,d=2)=>v==null?"—":Number(v).toFixed(d);
+    const rows=[["regime",structure.regime||"—"],["bias",structure.bias||"—"],["1h rsi",val(one.rsi14,1)],["1h macd",val(one.macd?.macd,4)],["1h adx",val(one.adx14,1)],["1h ema 9/21",ema(one)],["1h ema 50/200",one.ema50&&one.ema200?(one.ema50>one.ema200?"bullish":"bearish"):"—"],["4h trend",ema(four)],["1d trend",ema(day)],["atr",one.atr_pct==null?"—":(Number(one.atr_pct)*100).toFixed(2)+"%"],["volume",one.volume_ratio==null?"—":Number(one.volume_ratio).toFixed(2)+"x"],["support",val(one.support,4)],["resistance",val(one.resistance,4)],["funding",der.funding_rate==null?"unavailable":der.funding_rate],["mark / index",der.mark_price&&der.index_price?val(der.mark_price,4)+" / "+val(der.index_price,4):"unavailable"],["open interest",der.open_interest==null?"unavailable":der.open_interest],["futures expiry",der.expiry_risk||"unavailable"],["options expiry",opt.nearest_expiry||"unavailable"],["setup",sets[0]?.name||"NO TRADE"],["risk gate",risk.volatility_ok?"PASS":"BLOCK"],["data quality",x.data_quality?.score==null?"—":(Number(x.data_quality.score)*100).toFixed(0)+"%"]];
+    grid.innerHTML=rows.map(([k,v])=>"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.12);gap:12px'><span>"+k+"</span><strong>"+esc(v)+"</strong></div>").join("")+"<div style='margin-top:10px;color:var(--muted);font-size:10px'>Trade plan context: "+(sets.length?sets.map(s=>esc(s.side)+" "+esc(s.name)+" · R:R "+esc(s.risk_reward)).join(" · "):"no executable setup")+"</div><div style='margin-top:6px;color:var(--muted);font-size:10px'>Report hash: "+esc(x.report_hash||"—")+"</div>";
     if(badge){badge.textContent="REPORT READY";badge.className="badge";}
-  }catch(e){
-    if(grid)grid.textContent="Market intelligence unavailable: "+e.message;
-    if(badge)badge.textContent="REPORT ERROR";
-  }
+  }catch(e){if(grid)grid.textContent="Market intelligence unavailable: "+e.message;if(badge)badge.textContent="REPORT ERROR";}
 }
 async function refreshPaperStatus(){
-  try{const r=await api("/api/paper",{method:"GET"});const d=await r.json();renderPaper(d);await loadLedger()}catch(e){}
+  try{const r=await api("/api/paper",{method:"GET"});const d=await r.json();renderPaper(d);await loadLedger();await refreshAutonomousStatus()}catch(e){}
 }
 async function paperTestOrder(){const r=await paperApi("test_order",{symbol:$("paperSymbol").value.trim().toUpperCase(),side:"buy"});const d=await r.json();renderPaper(d);await loadLedger();toast(d.ok?"Explicit PAPER execution test filled":"Execution test blocked")}
 async function paperPause(){const r=await paperApi("pause");const d=await r.json();renderPaper(d);toast(d.ok?"Paper session paused":"Pause failed")}
@@ -700,7 +718,7 @@ async function exportLedger(format){if(!token()){toast("Dashboard token required
 selectExecutionMode("demo");fillLedgerExchanges();fillExchanges();fillPaperExchanges();loadFx();renderEquity();loadHealth();loadMarket();loadConnections();loadPaper();connectMarketSocket();
 setInterval(()=>{if(lastTickAt&&Date.now()-lastTickAt>7000)setMarketStatus("STALE",lastTickAt)},3000);setInterval(()=>{if(document.querySelector("#ledger.active"))loadLedger()},5000);
 setInterval(loadMarket,30000);
-setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);refreshAIStatus();refreshMarketIntelligence();
+setInterval(loadHealth,30000);setInterval(loadPaper,15000);setInterval(refreshAIStatus,300000);setInterval(refreshMarketIntelligence,900000);setInterval(refreshAutonomousStatus,15000);refreshAIStatus();refreshMarketIntelligence();refreshAutonomousStatus();
 setInterval(()=>{if(activeExchange&&token())loadAccount(activeExchange)},10000);
 
 </script>
