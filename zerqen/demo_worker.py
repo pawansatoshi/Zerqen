@@ -98,6 +98,11 @@ def post_futures_cycle() -> dict:
 def post_futures_mark() -> dict:
     return api_call("futures_mark", "/api/futures-paper", {"action":"mark"})
 
+def autonomous_status() -> dict:
+    return api_call("autonomous_status", "/api/autonomous")
+def autonomous_action(action: str) -> dict:
+    return api_call("autonomous_action", "/api/autonomous", {"action":action})
+
 
 def ensure_paper_initialized(cycle: dict) -> dict:
     """Initialize the default paper account once, then retry the cycle."""
@@ -202,6 +207,7 @@ def main() -> None:
                 )
 
             stages["status"] = api_call("demo_worker_get", "/api/demo-worker")
+            stages["autonomous"] = autonomous_status()
             print(
                 datetime.now(timezone.utc).isoformat(),
                 "probe demo-worker GET",
@@ -218,7 +224,8 @@ def main() -> None:
                 )
                 continue
 
-            if not stages["status"].get("enabled"):
+            auto=stages["autonomous"]
+            if not auto.get("enabled") and not auto.get("stop_requested"):
                 print(
                     datetime.now(timezone.utc).isoformat(),
                     "demo worker disabled",
@@ -257,7 +264,13 @@ def main() -> None:
             stages["execution"] = execute_approved_signal(stages["cycle"])
             if os.getenv("ZERQEN_FUTURES_AUTONOMOUS","true").strip().lower() in {"1","true","yes","on"}:
                 stages["futures_mark"] = post_futures_mark()
-                stages["futures_cycle"] = post_futures_cycle()
+                if not auto.get("stop_requested"):
+                    stages["futures_cycle"] = post_futures_cycle()
+            if auto.get("stop_requested"):
+                spot=stages.get("cycle") or {}
+                fut=stages.get("futures_mark") or {}
+                if int(spot.get("positions_remaining",0) or 0)==0 and not (fut.get("positions") or []):
+                    stages["autonomous_finalize_stop"]=autonomous_action("finalize_stop")
             print(
                 datetime.now(timezone.utc).isoformat(),
                 "probe paper execution",
