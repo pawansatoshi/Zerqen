@@ -25,3 +25,22 @@ CREATE TABLE IF NOT EXISTS zerqen_autonomous_engine (
 INSERT INTO zerqen_autonomous_engine(engine_id,enabled,updated_at)
 VALUES('default',FALSE,NOW())
 ON CONFLICT(engine_id) DO NOTHING;
+
+
+-- Per-market autonomous control and live observability.
+CREATE TABLE IF NOT EXISTS zerqen_autonomous_market (
+  market TEXT PRIMARY KEY,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  stop_requested BOOLEAN NOT NULL DEFAULT FALSE,
+  stage TEXT NOT NULL DEFAULT 'IDLE',
+  stage_message TEXT NOT NULL DEFAULT 'Engine idle',
+  active_symbol TEXT,
+  active_position_id TEXT,
+  heartbeat_at TIMESTAMPTZ,
+  last_cycle_at TIMESTAMPTZ,
+  last_error TEXT,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+INSERT INTO zerqen_autonomous_market(market,updated_at)
+VALUES ('spot',NOW()),('futures',NOW())
+ON CONFLICT(market) DO NOTHING;
