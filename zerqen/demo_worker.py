@@ -93,6 +93,11 @@ def api_call(label: str, path: str, payload: dict | None = None) -> dict:
 def post_paper_cycle() -> dict:
     return api_call("paper_cycle", "/api/paper", {"action": "autonomous_cycle"})
 
+def post_futures_cycle() -> dict:
+    return api_call("futures_autonomous_cycle", "/api/futures-autonomous", {})
+def post_futures_mark() -> dict:
+    return api_call("futures_mark", "/api/futures-paper", {"action":"mark"})
+
 
 def ensure_paper_initialized(cycle: dict) -> dict:
     """Initialize the default paper account once, then retry the cycle."""
@@ -250,6 +255,9 @@ def main() -> None:
             )
 
             stages["execution"] = execute_approved_signal(stages["cycle"])
+            if os.getenv("ZERQEN_FUTURES_AUTONOMOUS","true").strip().lower() in {"1","true","yes","on"}:
+                stages["futures_mark"] = post_futures_mark()
+                stages["futures_cycle"] = post_futures_cycle()
             print(
                 datetime.now(timezone.utc).isoformat(),
                 "probe paper execution",
