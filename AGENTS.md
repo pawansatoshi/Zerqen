@@ -6,7 +6,8 @@ Before changing code, read:
 
 1. `docs/ZERQEN_MASTER_CONTEXT.md` — authoritative product requirements, architecture, invariants, current state, known issues, and next actions.
 2. Relevant technical docs under `docs/`.
-3. The implementation itself — docs never override executable behavior when describing what is actually implemented.
+3. `docs/ZERQEN_ARCHITECTURE.md` — consolidated system architecture.
+4. The implementation itself — docs never override executable behavior when describing what is actually implemented.
 
 A new agent must NOT ask the user to re-explain the project when the answer exists in the repository.
 
