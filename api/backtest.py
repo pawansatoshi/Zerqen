@@ -23,6 +23,13 @@ MAX_FUTURES_LEVERAGE = D(5)
 MAINTENANCE_MARGIN = D("0.005")
 FUNDING_RATE_ASSUMPTION = D("0.0001")
 
+# Binance-supported candle intervals exposed by the backtest UI.
+BACKTEST_TIMEFRAMES = frozenset({
+    "1m", "3m", "5m", "15m", "30m",
+    "1h", "2h", "4h", "6h", "8h", "12h",
+    "1d", "3d", "1w", "1M",
+})
+
 
 def _get_json(url: str):
     req = urllib.request.Request(url, headers={"User-Agent": "Zerqen-Backtest/1.0"})
@@ -139,8 +146,12 @@ def backtest(
 ):
     if market_type not in {"spot", "futures"}:
         raise HTTPException(400, "market_type must be spot or futures")
-    if timeframe not in {"1h", "4h", "1d", "1w"}:
+    timeframe = str(timeframe).strip()
+    if timeframe not in BACKTEST_TIMEFRAMES:
         raise HTTPException(400, "unsupported timeframe")
+    symbol = str(symbol).strip().upper()
+    if not symbol or "/" not in symbol or symbol.startswith("/") or symbol.endswith("/"):
+        raise HTTPException(400, "symbol must use BASE/QUOTE format")
     if market_type == "spot":
         leverage = 1.0
     lev = D(str(leverage))
