@@ -243,6 +243,12 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
       <div><div class="riskrow"><span>Fees</span><span id="btFees">—</span></div><div class="riskrow"><span>Funding</span><span id="btFunding">—</span></div><div class="riskrow"><span>Slippage</span><span id="btSlippage">—</span></div></div>
     </div>
   </div>
+  <div class="section"><div class="section-head"><div><h2>Backtest chart & decision replay</h2><p>Candles, trade markers and exact decision evidence from this replay.</p></div></div>
+    <div class="card chart-card"><div id="btChartMeta" class="sub">Run a backtest to load the replay chart.</div><div class="chart-wrap" style="height:430px" id="btChart"></div><div class="chart-position" id="btChartLegend"></div></div>
+  </div>
+  <div class="section"><div class="section-head"><div><h2>Decision evidence</h2><p>Why each signal was observed, rejected, opened or used to exit a position.</p></div></div>
+    <div class="card table-card"><div class="table-scroll"><table class="table" style="min-width:1100px"><thead><tr><th>Time</th><th>Signal</th><th>Price</th><th>EMA9</th><th>EMA21</th><th>RSI</th><th>Status</th><th>Reason</th></tr></thead><tbody id="btDecisionRows"><tr><td colspan="8" class="empty">No decision evidence yet.</td></tr></tbody></table></div></div>
+  </div>
   <div class="section"><div class="section-head"><div><h2>Recent simulated trades</h2><p>Entry, exit, reason and R multiple from the deterministic replay.</p></div></div>
     <div class="card table-card"><div class="table-scroll"><table class="table" style="min-width:900px"><thead><tr><th>Entry</th><th>Exit</th><th>Side</th><th>Entry</th><th>Exit</th><th>Net P&L</th><th>Reason</th><th>R</th></tr></thead><tbody id="btTradesRows"><tr><td colspan="8" class="empty">No backtest run yet.</td></tr></tbody></table></div></div>
   </div>
@@ -514,6 +520,21 @@ async function runBacktestFor(market){
   if(!r.ok||!d.ok) throw new Error(d.error||"backtest failed");
   return d;
 }
+function renderBacktestChart(d){
+  const host=$("btChart"), rows=d.candles_data||[];
+  if(!host||!rows.length){if(host)host.innerHTML="<div class='empty'>No candle data returned.</div>";return}
+  const W=1200,H=430,L=52,R=18,T=20,B=34;
+  const lo=Math.min(...rows.map(x=>x.low)), hi=Math.max(...rows.map(x=>x.high)), span=Math.max(hi-lo,1e-9);
+  const X=i=>L+(i/(rows.length-1||1))*(W-L-R), Y=p=>T+(hi-p)/span*(H-T-B);
+  const byTime=new Map(rows.map((r,i)=>[r.time,i]));
+  let svg="<svg viewBox='0 0 "+W+" "+H+"' preserveAspectRatio='none' aria-label='Backtest candlestick chart'>";
+  for(let g=0;g<=4;g++){const yy=T+g*(H-T-B)/4, p=hi-g*span/4;svg+="<line class='chart-grid' x1='"+L+"' y1='"+yy+"' x2='"+(W-R)+"' y2='"+yy+"'/><text class='chart-axis' x='4' y='"+(yy+3)+"'>"+fmt(p,2)+"</text>"}
+  const bw=Math.max(2,(W-L-R)/rows.length*.62);
+  rows.forEach((r,i)=>{const cx=X(i),o=Y(r.open),c=Y(r.close),h=Y(r.high),l=Y(r.low),up=r.close>=r.open;svg+="<line class='wick' x1='"+cx+"' y1='"+h+"' x2='"+cx+"' y2='"+l+"'/><rect class='"+(up?"candle-up":"candle-down")+"' x='"+(cx-bw/2)+"' y='"+Math.min(o,c)+"' width='"+bw+"' height='"+Math.max(1,Math.abs(c-o))+"'/>"});
+  (d.recent_trades||[]).forEach(t=>{const ei=byTime.get(t.entry_time),xi=byTime.get(t.exit_time);if(ei!=null){const cx=X(ei),cy=Y(t.entry);svg+="<circle cx='"+cx+"' cy='"+cy+"' r='4' fill='var(--blue)'/><text class='signal-buy' x='"+cx+"' y='"+Math.max(12,cy-8)+"' text-anchor='middle'>"+t.side+" IN</text>"}if(xi!=null){const cx=X(xi),cy=Y(t.exit),good=t.net_pnl>=0;svg+="<circle cx='"+cx+"' cy='"+cy+"' r='4' fill='"+(good?"var(--green)":"var(--red)")+"'/><text class='"+(good?"signal-buy":"signal-sell")+"' x='"+cx+"' y='"+Math.min(H-8,cy+16)+"' text-anchor='middle'>"+t.reason+"</text>"}});
+  svg+="</svg>";host.innerHTML=svg;
+  $("btChartMeta").textContent=(d.symbol||"")+" · "+(d.timeframe||"")+" · "+rows.length+" candles · blue = entry · green/red = profitable/loss exit";
+}
 function renderBacktest(d){
   $("btState").textContent="COMPLETE";
   $("btMarketLabel").textContent=(d.market_type||"").toUpperCase()+" · "+d.symbol;
@@ -528,6 +549,8 @@ function renderBacktest(d){
   $("btFunding").textContent=displayMoney(d.funding);
   $("btSlippage").textContent=displayMoney(d.slippage);
   $("btAssumptions").textContent=JSON.stringify(d.assumptions,null,2)+"\n\n"+d.warning;
+  renderBacktestChart(d);
+  $("btDecisionRows").innerHTML=(d.signal_events||[]).slice().reverse().map(s=>"<tr><td>"+new Date(s.time).toLocaleString()+"</td><td>"+s.signal+"</td><td>"+fmt(s.price,6)+"</td><td>"+fmt(s.ema9,4)+"</td><td>"+fmt(s.ema21,4)+"</td><td>"+(s.rsi==null?"—":fmt(s.rsi,2))+"</td><td>"+s.status+"</td><td>"+s.reason+"</td></tr>").join("")||"<tr><td colspan='8' class='empty'>No crossover decisions in this window.</td></tr>";
   $("btTradesRows").innerHTML=(d.recent_trades||[]).slice().reverse().map(t=>"<tr><td>"+new Date(t.entry_time).toLocaleString()+"</td><td>"+new Date(t.exit_time).toLocaleString()+"</td><td>"+t.side+"</td><td>"+fmt(t.entry,6)+"</td><td>"+fmt(t.exit,6)+"</td><td class='"+(t.net_pnl>=0?"filled":"negative")+"'>"+(t.net_pnl>=0?"+":"")+fmt(t.net_pnl,4)+"</td><td>"+t.reason+"</td><td>"+fmt(t.r_multiple,2)+"R</td></tr>").join("")||"<tr><td colspan='8' class='empty'>No completed trades.</td></tr>";
   return d;
 }
