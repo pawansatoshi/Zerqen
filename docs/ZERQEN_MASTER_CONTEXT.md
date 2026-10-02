@@ -1,3 +1,13 @@
+## Backtest readiness hardening — 2026-10-02
+
+The historical backtest UI now exposes the replay visually instead of only showing summary numbers: candlesticks, simulated trade entry/exit markers, and a decision-evidence table with EMA9, EMA21, RSI, status, and reason.
+
+SPOT backtesting is explicitly long-only. A BUY signal can open a Spot position; a bearish SELL signal exits an existing Spot long. The backtest must never create a naked Spot short. FUTURES may represent both long and short directions.
+
+Backtest results remain deterministic historical research and are not the autonomous AI paper-trading worker. The UI must make the route from candle data → signal → filters/risk → simulated execution → exit → P&L inspectable.
+
+This work is part of demo-readiness hardening: before relying on backtest results to validate the autonomous paper engine, reconcile the backtest accounting and make its decision logic visibly auditable.
+
 # ZERQEN — MASTER CONTEXT / LIVING HANDOFF
 
 **Last updated:** 2026-10-01  
