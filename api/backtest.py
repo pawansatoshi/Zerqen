@@ -175,6 +175,7 @@ def backtest(
     daily_locked = False
     position = None
     trades = []
+    signal_events = []
     equity_curve = []
     rejected = {"volatility": 0, "stop_distance": 0, "risk": 0, "daily": 0}
     funding_total = D(0)
@@ -249,14 +250,37 @@ def backtest(
                 position = None
                 current_equity = cash
 
-        if not position and not daily_locked:
-            _, signal = _regime(rows, i, ema9, ema21, rsi)
+        _, signal = _regime(rows, i, ema9, ema21, rsi)
+        if signal:
+            signal_events.append({"time": ts.isoformat(), "signal": signal, "price": float(row[4]), "ema9": float(ema9[i]), "ema21": float(ema21[i]), "rsi": float(rsi[i]) if rsi[i] is not None else None, "atr": float(atr[i]) if atr[i] is not None else None, "status": "OBSERVED", "reason": "EMA9/EMA21 crossover with RSI confirmation"})
+
+        if market_type == "spot" and position and signal == "SELL" and not daily_locked:
+            fill = row[4] * (D(1) - SLIPPAGE_RATE)
+            gross = (fill - position["entry"]) * position["qty"]
+            exit_fee = fill * position["qty"] * FEE_RATE
+            cash += gross - exit_fee
+            fees_total += exit_fee
+            slippage_total += abs(fill - row[4]) * position["qty"]
+            net = gross - position["entry_fee"] - exit_fee - position["funding"]
+            trades.append({"entry_time": position["time"].isoformat(), "exit_time": ts.isoformat(), "side": "BUY", "entry": float(position["entry"]), "exit": float(fill), "quantity": float(position["qty"]), "gross_pnl": float(gross), "net_pnl": float(net), "reason": "SIGNAL_EXIT", "r_multiple": float(net / position["risk"] if position["risk"] else D(0)), "leverage": float(lev)})
+            signal_events[-1]["status"] = "EXIT"
+            signal_events[-1]["reason"] = "Bearish crossover closed existing SPOT long"
+            position = None
+            current_equity = cash
+
+        if not position and not daily_locked and (market_type == "futures" or signal == "BUY"):
             if signal and not _volatility_ok(rows, i, atr):
                 rejected["volatility"] += 1
+                if signal_events and signal_events[-1]["time"] == ts.isoformat():
+                    signal_events[-1]["status"] = "REJECTED"
+                    signal_events[-1]["reason"] = "Volatility filter failed"
             elif signal:
                 stop_target = _structural_stop(rows, i, signal.lower(), atr)
                 if not stop_target:
                     rejected["stop_distance"] += 1
+                    if signal_events and signal_events[-1]["time"] == ts.isoformat():
+                        signal_events[-1]["status"] = "REJECTED"
+                        signal_events[-1]["reason"] = "Stop distance invalid"
                 else:
                     stop, target = stop_target
                     entry = row[4] * (D(1) + SLIPPAGE_RATE if signal == "BUY" else D(1) - SLIPPAGE_RATE)
@@ -268,23 +292,18 @@ def backtest(
                     margin = entry * qty / lev
                     if qty <= 0 or (market_type == "futures" and margin > current_equity):
                         rejected["risk"] += 1
+                        if signal_events and signal_events[-1]["time"] == ts.isoformat():
+                            signal_events[-1]["status"] = "REJECTED"
+                            signal_events[-1]["reason"] = "Risk/position-size check failed"
                     else:
                         entry_fee = entry * qty * FEE_RATE
                         cash -= entry_fee
                         fees_total += entry_fee
                         liquidation = _liq_price(entry, signal.lower(), lev)
-                        position = {
-                            "side": signal.lower(),
-                            "entry": entry,
-                            "qty": qty,
-                            "stop": stop,
-                            "target": target,
-                            "liq": liquidation,
-                            "risk": risk_cash,
-                            "entry_fee": entry_fee,
-                            "funding": D(0),
-                            "time": ts,
-                        }
+                        position = {"side": signal.lower(), "entry": entry, "qty": qty, "stop": stop, "target": target, "liq": liquidation, "risk": risk_cash, "entry_fee": entry_fee, "funding": D(0), "time": ts}
+                        if signal_events and signal_events[-1]["time"] == ts.isoformat():
+                            signal_events[-1]["status"] = "TRADE_OPENED"
+                            signal_events[-1]["reason"] = "Risk approved"
 
         eq = mark(row[4])
         peak = max(peak, eq)
@@ -362,7 +381,12 @@ def backtest(
             "futures_funding_rate_assumption_per_8h": float(FUNDING_RATE_ASSUMPTION),
         },
         "rejected": rejected,
-        "equity_curve": equity_curve[-250:],
+        "candles_data": [
+            {"time": datetime.fromtimestamp(r[0] / 1000, tz=timezone.utc).isoformat(), "open": float(r[1]), "high": float(r[2]), "low": float(r[3]), "close": float(r[4]), "volume": float(r[5])}
+            for r in rows[-300:]
+        ],
+        "signal_events": signal_events[-100:],
+        "equity_curve": equity_curve[-300:],
         "recent_trades": trades[-50:],
         "warning": "Historical backtest is a research simulation, not a guarantee of future performance. Futures funding is modeled as an explicit assumption rather than historical funding data.",
     }
