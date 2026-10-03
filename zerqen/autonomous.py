@@ -141,7 +141,7 @@ def run_autonomous_cycle(conn, state):
         "SELECT COUNT(*) FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' AND created_at >= date_trunc('day', now()) AND COALESCE(payload->>'status','') NOT IN ('AI_COOLDOWN','AI_DAILY_CAP')"
     ).fetchone()[0]
     if eligible and latest and ai_today >= ai_daily_cap:
-        event(conn,"AUTONOMOUS_AI_REVIEW",{"status":"AI_DAILY_CAP","candidate":eligible[0]["symbol"],"cap":ai_daily_cap})
+        event(conn,"AUTONOMOUS_AI_REVIEW",{"status":"AI_DAILY_CAP","candidate":eligible[0]["symbol"],"cap":ai_daily_cap,"candidates_per_review":ai_candidates if 'ai_candidates' in locals() else 3})
         conn.commit()
         return {"ok":True,"autonomous":True,"trade":False,"reason":"AI daily safety cap reached","reviewed":[]}
     if eligible and latest:
@@ -154,8 +154,11 @@ def run_autonomous_cycle(conn, state):
                                                "next_review_seconds":max(0,int(ai_interval-age))})
             conn.commit()
             return {"ok":True,"autonomous":True,"trade":False,"reason":"same setup already reviewed; waiting for material change or AI interval","reviewed":[]}
-    # One full AI review per autonomous decision window. The scanner still covers all 50.
-    for c in eligible[:1]:
+    # Review several top candidates so AI can compare viable setups rather than
+    # blindly approving only the scanner's first-ranked symbol. The scanner still
+    # researches the full Top-50 universe; this cap controls AI call volume.
+    ai_candidates=max(1,min(5,int(os.getenv("ZERQEN_AUTONOMOUS_AI_CANDIDATES","3"))))
+    for c in eligible[:ai_candidates]:
         symbol=c["symbol"]; side=c["side"]
         if symbol in existing:
             reviewed.append({"symbol":symbol,"side":side,"status":"SKIP_EXISTING_POSITION"}); continue

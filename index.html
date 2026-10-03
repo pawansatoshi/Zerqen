@@ -156,7 +156,7 @@ button,input,select{font:inherit}.app{max-width:1440px;margin:auto;padding:20px 
         <button class="secondary" id="autoDemoBtn" onclick="startMarketAutonomous('spot')">START SPOT AUTONOMOUS</button>
         <button class="secondary" onclick="paperResume()">Resume demo</button>
         <button class="secondary" onclick="paperPause()">Pause demo</button>
-        <button class="secondary" onclick="paperCycle()">Run one market cycle</button>
+        <button class="secondary" onclick="paperCycle()">Run one autonomous cycle</button>
         <button class="secondary" onclick="paperTestOrder()">Run execution test</button>
         <button class="secondary" onclick="paperHalt()">Halt new orders</button>
         <button class="secondary" onclick="paperFlatten()">Flatten paper positions</button><button class="secondary" onclick="paperReset()">Reset paper account</button>
@@ -728,19 +728,27 @@ async function paperInitialize(){
 
 async function paperCycle(){
   if(executionMode!=="demo"){toast("Real mode is locked");return}
-  const r=await paperApi("cycle");const d=await r.json();renderPaper(d);
+  if(!requireDashboardAccess())return;
+  const r=await paperApi("autonomous_cycle");const d=await r.json();renderPaper(d);
   if(d.ok && d.initialized){
-    const decision=(d.events||[]).find(e=>e.type==="STRATEGY_DECISION" && e.payload?.risk_decision==="APPROVED");
-    const hasPosition=(d.positions||[]).some(p=>p.symbol===d.symbol);
-    if(decision && !hasPosition){
-      const er=await paperApi("test_order",{symbol:d.symbol,side:decision.payload?.signal_direction==="SELL"?"sell":"buy"});
+    if(d.trade && d.selected){
+      const s=d.selected;
+      $("paperMessage").textContent="AUTONOMOUS setup approved: "+s.symbol+" "+s.side+" · AI "+(Number(s.ai_confidence||0)*100).toFixed(0)+"% · stop "+s.stop+" · target "+s.target;
+      const er=await paperApi("test_order",{symbol:s.symbol,side:String(s.side).toLowerCase(),scanner_requested:true,autonomous_approved:true});
       const ed=await er.json();
       renderPaper(ed);
-      if(ed.ok){ $("paperMessage").textContent="DEMO execution filled from approved strategy signal"; playAlert(decision.payload?.signal_direction==="SELL"?"SELL":"BUY"); }
+      if(ed.ok){playAlert(s.side);toast("Autonomous paper trade filled · "+s.symbol)}
+      else if(ed.error){$("paperMessage").textContent="Setup approved but execution was rejected: "+ed.error}
+    }else{
+      const reason=d.reason||"NO_TRADE";
+      $("paperMessage").textContent="Autonomous research completed · "+reason;
+      toast("No autonomous trade this cycle");
     }
+  }else if(!d.ok && d.error){
+    $("paperMessage").textContent=d.error;
   }
   await loadLedger();
-  if(!d.ok && d.error) $("paperMessage").textContent=d.error;
+  await refreshAutonomousStatus();
 }
 async function legacyPaperToggleAuto(){
   const action=autoDemoTimer?"stop":"start";
