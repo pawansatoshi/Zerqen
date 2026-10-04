@@ -1,3 +1,39 @@
+## Vercel timeout/root-cause hardening — 2026-10-04
+
+Production Vercel error telemetry was audited after a warning reported 1,281 execution-time-limit hits.
+
+Verified runtime evidence:
+
+- **1,281** Vercel Runtime Timeout Errors, `Task timed out after 300 seconds`, on the Python runtime route `/python`, first seen 2026-09-30 and last seen 2026-10-02.
+- **541** ASGI errors in the same window, with the representative traceback ending in `psycopg.errors.ProtocolViolation: query_wait_timeout`.
+- The traceback specifically reached `api/autonomous_control.py` while executing `_rows(c)`, proving PostgreSQL wait contention was one concrete production failure mode.
+- The current worker architecture also showed repeated expensive autonomous Top-50/AI work on a 60-second loop.
+
+Root causes identified in code:
+
+1. Spot `api/_paper.py::db()` performed CREATE/ALTER schema migrations and ledger migrations on every request.
+2. Futures `api/futures_paper.py::_db()` performed CREATE/ALTER/UPDATE migrations on every request.
+3. `api/autonomous_control.py` ran control-table DDL during every status/action path, including recurring worker stage updates.
+4. Spot autonomous AI-cap enforcement happened only after the expensive Top-50 scan.
+5. Futures autonomous scanning/AI review had no equivalent cooldown/cap, so an enabled Futures engine could rescan the Top-50 universe every worker minute.
+
+PR #32 addresses these without changing the paper-only boundary:
+
+- schema migrations are now explicit initialization work rather than hot-path work;
+- autonomous control status no longer creates tables;
+- worker schema setup occurs on explicit lifecycle start;
+- Spot AI daily-cap short-circuit happens before the Top-50 scan;
+- Futures protective marking still runs each cycle, while expensive Top-50 + AI research is throttled by a configurable interval (default 1800s) and daily cap (default 40).
+
+**Vercel Workflows decision:** do not migrate the autonomous worker to Vercel Workflows as the immediate fix. Vercel Workflows is suitable for durable multi-step orchestration, but the concrete current failure was database hot-path contention plus unnecessary repeated research. Keep Voroa as the persistent worker and treat Workflow adoption as a separate architecture change after the current timeout fix is verified.
+
+Verification state:
+
+- PR #32 opened against `main`.
+- GitHub CI is running.
+- Vercel preview deployment is building/pending.
+- Runtime timeout resolution is **not yet proven** until the new deployment is exercised and fresh telemetry shows no recurrence.
+
 ## Backtest readiness hardening — 2026-10-02
 
 The historical backtest UI now exposes the replay visually instead of only showing summary numbers: candlesticks, simulated trade entry/exit markers, and a decision-evidence table with EMA9, EMA21, RSI, status, and reason.
