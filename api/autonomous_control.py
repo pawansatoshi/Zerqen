@@ -26,15 +26,24 @@ def _rows(c):
 def status(x_zerqen_dashboard_token:str|None=Header(default=None)):
     _auth(x_zerqen_dashboard_token)
     with _db() as c:
-        _ensure(c)
-        return {"ok":True,"engines":_rows(c)}
+        try:
+            return {"ok":True,"engines":_rows(c)}
+        except Exception as exc:
+            # A brand-new database has no control table yet. Do not run DDL on every status poll.
+            if "does not exist" in str(exc).lower() or "undefinedtable" in type(exc).__name__.lower():
+                return {"ok":True,"engines":[
+                    {"market":"futures","enabled":False,"stop_requested":False,"stage":"IDLE","stage_message":"Engine idle","active_symbol":None,"active_position_id":None,"heartbeat_at":None,"last_cycle_at":None,"last_error":None,"mobile_independent":True,"live_trading":False},
+                    {"market":"spot","enabled":False,"stop_requested":False,"stage":"IDLE","stage_message":"Engine idle","active_symbol":None,"active_position_id":None,"heartbeat_at":None,"last_cycle_at":None,"last_error":None,"mobile_independent":True,"live_trading":False},
+                ]
+            raise
 @router.post("")
 def action(payload:dict,x_zerqen_dashboard_token:str|None=Header(default=None)):
     _auth(x_zerqen_dashboard_token); market=str(payload.get("market","")).lower(); name=str(payload.get("action","")).lower()
     if market not in {"spot","futures"}: raise HTTPException(400,"market must be spot or futures")
     with _db() as c:
-        _ensure(c);now=datetime.now(timezone.utc)
+        now=datetime.now(timezone.utc)
         if name=="start":
+            _ensure(c);
             c.execute("UPDATE zerqen_autonomous_market SET enabled=TRUE,stop_requested=FALSE,stage='STARTING',stage_message=%s,last_error=NULL,updated_at=%s WHERE market=%s",("Initializing "+market.upper()+" autonomous engine",now,market))
             try:
                 from api.demo_worker import set_enabled

@@ -35,7 +35,11 @@ def db():
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("database unavailable")
-    conn = psycopg.connect(url, connect_timeout=8)
+    return psycopg.connect(url, connect_timeout=8)
+
+
+def ensure_schema(conn):
+    """Run paper/ledger migrations only during explicit account initialization, never per request."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS zerqen_paper_state (
             account_id TEXT PRIMARY KEY,
@@ -521,6 +525,7 @@ class handler(BaseHTTPRequestHandler):
             action=data.get("action")
             with db() as conn:
                 if action=="initialize":
+                    ensure_schema(conn)
                     capital=D(str(data.get("starting_capital","0")))
                     if capital <= 0:
                         return send(self,400,{"ok":False,"error":"starting capital must be explicitly set and positive"})
