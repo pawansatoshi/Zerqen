@@ -40,7 +40,11 @@ def _db():
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise HTTPException(503, "database unavailable")
-    conn = psycopg.connect(url, connect_timeout=8)
+    return psycopg.connect(url, connect_timeout=8)
+
+
+def ensure_schema(conn):
+    """Run Futures schema migrations only during explicit account initialization."""
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS zerqen_futures_paper_state (
@@ -315,6 +319,7 @@ def action(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=
     try:
         with _db() as conn:
             if action_name == "initialize":
+                ensure_schema(conn)
                 if _state(conn):
                     raise HTTPException(409, "futures paper account already initialized")
                 capital = D(str(payload.get("starting_capital", "1000")))
