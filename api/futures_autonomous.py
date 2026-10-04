@@ -52,6 +52,29 @@ def cycle(payload: dict, x_zerqen_dashboard_token: str | None = Header(default=N
             _event(conn,"FUTURES_DAILY_TARGET_REACHED",{"equity":str(eq),"target":str(state[12])})
             conn.commit()
             return {"ok":True,"autonomous":True,"trade":False,"reason":"DAILY_TARGET_REACHED","equity":float(eq),"daily_target":float(state[12]),"closed":closed}
+
+        # Futures protection/marking runs every worker cycle, but expensive Top-50 + AI
+        # research is throttled so an unchanged setup is not rescanned every 60 seconds.
+        ai_interval=int(os.getenv("ZERQEN_FUTURES_AI_INTERVAL_SECONDS","1800"))
+        ai_daily_cap=int(os.getenv("ZERQEN_FUTURES_AI_DAILY_CAP","40"))
+        ai_today=conn.execute(
+            "SELECT COUNT(*) FROM zerqen_futures_paper_events WHERE account_id='default' AND event_type='FUTURES_AI_REVIEW' AND created_at >= date_trunc('day', now()) AND COALESCE(payload->>'status','') NOT IN ('AI_COOLDOWN','AI_DAILY_CAP')"
+        ).fetchone()[0]
+        if ai_today >= ai_daily_cap:
+            _event(conn,"FUTURES_AI_REVIEW",{"status":"AI_DAILY_CAP","cap":ai_daily_cap})
+            conn.commit()
+            return {"ok":True,"autonomous":True,"trade":False,"reason":"AI daily safety cap reached","closed":closed}
+
+        latest_ai=conn.execute(
+            "SELECT payload,created_at FROM zerqen_futures_paper_events WHERE account_id='default' AND event_type='FUTURES_AI_REVIEW' ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        if latest_ai:
+            age=(_now()-latest_ai[1]).total_seconds()
+            if age < ai_interval:
+                _event(conn,"FUTURES_AI_REVIEW",{"status":"AI_COOLDOWN","next_review_seconds":max(0,int(ai_interval-age))})
+                conn.commit()
+                return {"ok":True,"autonomous":True,"trade":False,"reason":"same futures research window still active","closed":closed}
+
         candidates=scan_top50(50)
         eligible=[x for x in candidates if x.get("side") in {"BUY","SELL"} and x.get("volatility_ok") and x.get("liquidity_ok")]
         if not eligible:
