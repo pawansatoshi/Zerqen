@@ -83,6 +83,9 @@ def heartbeat():
 
 def set_enabled(enabled: bool):
     with _db() as conn:
+        # Worker control is an explicit lifecycle action; schema creation is allowed here,
+        # but never on the recurring status/heartbeat hot path.
+        _ensure_schema_once(conn)
         now = datetime.now(timezone.utc)
         conn.execute(
             "UPDATE zerqen_demo_worker SET enabled=%s,updated_at=%s WHERE worker_id='default'",
