@@ -109,6 +109,17 @@ def run_autonomous_cycle(conn, state):
         conn.commit()
         return {"ok":True,"autonomous":True,"trade":False,"reason":"AI is required for autonomous mode"}
 
+    # Check the daily AI safety cap before the expensive Top-50 network scan.
+    # Protective position management is performed by the paper-cycle caller first.
+    ai_daily_cap=int(os.getenv("ZERQEN_AUTONOMOUS_AI_DAILY_CAP","40"))
+    ai_today=conn.execute(
+        "SELECT COUNT(*) FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' AND created_at >= date_trunc('day', now()) AND COALESCE(payload->>'status','') NOT IN ('AI_COOLDOWN','AI_DAILY_CAP')"
+    ).fetchone()[0]
+    if ai_today >= ai_daily_cap:
+        event(conn,"AUTONOMOUS_AI_REVIEW",{"status":"AI_DAILY_CAP","cap":ai_daily_cap})
+        conn.commit()
+        return {"ok":True,"autonomous":True,"trade":False,"reason":"AI daily safety cap reached","reviewed":[]}
+
     candidates=scan_top50(50)
     event(conn,"AUTONOMOUS_MARKET_SCAN",{"scanned":50,"usable_candidates":len(candidates),
         "shortlist":[{"symbol":x["symbol"],"side":x["side"],"score":x["score"],"rsi":x["rsi"],
@@ -133,17 +144,12 @@ def run_autonomous_cycle(conn, state):
     universe_research=[{k:x.get(k) for k in ("symbol","side","score","price","rsi","momentum","volume_ratio","atr_pct","max_bar_pct","change24h","quote_volume","volatility_ok","liquidity_ok")} for x in candidates]
     eligible=[x for x in candidates if x["side"] in {"BUY","SELL"}]
     ai_interval=int(os.getenv("ZERQEN_AUTONOMOUS_AI_INTERVAL_SECONDS","1800"))
-    ai_daily_cap=int(os.getenv("ZERQEN_AUTONOMOUS_AI_DAILY_CAP","40"))
     latest=conn.execute(
         "SELECT payload,created_at FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' ORDER BY created_at DESC LIMIT 1"
     ).fetchone()
     ai_today=conn.execute(
         "SELECT COUNT(*) FROM zerqen_paper_events WHERE account_id='default' AND event_type='AUTONOMOUS_AI_REVIEW' AND created_at >= date_trunc('day', now()) AND COALESCE(payload->>'status','') NOT IN ('AI_COOLDOWN','AI_DAILY_CAP')"
     ).fetchone()[0]
-    if eligible and latest and ai_today >= ai_daily_cap:
-        event(conn,"AUTONOMOUS_AI_REVIEW",{"status":"AI_DAILY_CAP","candidate":eligible[0]["symbol"],"cap":ai_daily_cap})
-        conn.commit()
-        return {"ok":True,"autonomous":True,"trade":False,"reason":"AI daily safety cap reached","reviewed":[]}
     if eligible and latest:
         last_payload=latest[0] or {}
         last_symbol=str(last_payload.get("symbol") or "")
